@@ -5,11 +5,14 @@ import { createServer, Server as HTTPServer } from "http";
 import cors from "cors";
 import { Retell } from "retell-sdk";
 import { CustomLlmRequest, CustomLlmResponse } from "./types";
-// Updated to use the Azure OpenAI file that we modified for Groq
-import { FunctionCallingLlmClient } from "./llms/llm_azure_openai_func_call";
+
+// FIXED: Use the OpenAI file where you updated Katie Scheduler
+import { DemoLlmClient } from "./llms/llm_openai_func_call";
+
+// Commented out the wrong imports
+// import { FunctionCallingLlmClient } from "./llms/llm_azure_openai_func_call";
 // import { DemoLlmClient } from "./llms/llm_azure_openai";
 // import { FunctionCallingLlmClient } from "./llms/llm_azure_openai_func_call_end_call";
-// import { FunctionCallingLlmClient } from "./llms/llm_openai_func_call";
 // import { DemoLlmClient } from "./llms/llm_openrouter";
 
 export class Server {
@@ -91,8 +94,8 @@ export class Server {
           };
           ws.send(JSON.stringify(config));
 
-          // Start sending the begin message to signal the client is ready.
-          const llmClient = new FunctionCallingLlmClient();
+          // FIXED: Use DemoLlmClient from the OpenAI file you updated
+          const llmClient = new DemoLlmClient();
 
           ws.on("error", (err) => {
             console.error("Error received in LLM websocket client: ", err);
@@ -116,27 +119,4 @@ export class Server {
               // Send begin message to start the conversation
               llmClient.BeginMessage(ws);
             } else if (
-              request.interaction_type === "reminder_required" ||
-              request.interaction_type === "response_required"
-            ) {
-              console.clear();
-              console.log("req", request);
-              llmClient.DraftResponse(request, ws);
-            } else if (request.interaction_type === "ping_pong") {
-              let pingpongResponse: CustomLlmResponse = {
-                response_type: "ping_pong",
-                timestamp: request.timestamp,
-              };
-              ws.send(JSON.stringify(pingpongResponse));
-            } else if (request.interaction_type === "update_only") {
-              // process live transcript update if needed
-            }
-          });
-        } catch (err) {
-          console.error("Encountered error:", err);
-          ws.close(1011, "Encountered error: " + err);
-        }
-      },
-    );
-  }
-}
+              request.interaction_type === "
