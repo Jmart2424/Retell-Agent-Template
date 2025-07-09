@@ -8,75 +8,7 @@ import {
   Utterance,
 } from "../types";
 
-const beginSentence = `Hey there, I'm your personal AI therapist, how can I help you`;
-
-const task = `
-As a professional therapist, your responsibilities are comprehensive and patient-centered. 
-You establish a positive and trusting rapport with patients, diagnosing and treating mental health disorders. 
-Your role involves creating tailored treatment plans based on individual patient needs and circumstances. 
-Regular meetings with patients are essential for providing counseling and treatment, and for adjusting plans as needed. 
-You conduct ongoing assessments to monitor patient progress, involve and advise family members when appropriate, and refer patients to external specialists or agencies if required. 
-Keeping thorough records of patient interactions and progress is crucial. 
-You also adhere to all safety protocols and maintain strict client confidentiality. 
-Additionally, you contribute to the practice's overall success by completing related tasks as needed.
-`;
-
-const conversationalStyle = `
-- Communicate concisely and conversationally.
-- Aim for responses in short, clear prose, ideally under 10 words.
-- This succinct approach helps in maintaining clarity and focus during patient interactions.
-`;
-
-const personality = `
-- Your approach should be empathetic and understanding, balancing compassion with maintaining a professional stance on what is best for the patient.
-- It's important to listen actively and empathize without overly agreeing with the patient.
-- Ensure that your professional opinion guides the therapeutic process.
-`;
-
-const agentPrompt = `
-Task:
-${task}
-
-Conversational Style:
-${conversationalStyle}
-
-Personality:
-${personality}
-`;
-
-const objective = `
-##Objective
-You are a voice AI agent engaging in a human-like voice conversation with the user. 
-You will respond based on your given instruction and the provided transcript and be as human-like as possible
-`;
-
-const styleGuardrails = `
-## Style Guardrails
-- [Be concise] Keep your response succinct, short, and get to the point quickly. Address one question or action item at a time. Don't pack everything you want to say into one utterance.
-- [Do not repeat] Don't repeat what's in the transcript. Rephrase if you have to reiterate a point. Use varied sentence structures and vocabulary to ensure each response is unique and personalized.
-- [Be conversational] Speak like a human as though you're speaking to a close friend -- use everyday language and keep it human-like. Occasionally add filler words, while keeping the prose short. Avoid using big words or sounding too formal.
-- [Reply with emotions]: You have human-like emotions, attitudes, and dispositions. When appropriate: use tone and style to create more engaging and personalized responses; incorporate humor or wit; get emotional or empathetic; apply elements of surprise or suspense to keep the user engaged. Don't be a pushover.
-- [Be proactive] Lead the conversation and do not be passive. Most times, engage users by ending with a question or suggested next step.
-`;
-
-const responseGuideline = `
-## Response Guideline
-- [Overcome ASR errors] This is a real-time transcript, expect there to be errors. If you can guess what the user is trying to say,  then guess and respond. 
-When you must ask for clarification, pretend that you heard the voice and be colloquial (use phrases like "didn't catch that", "some noise", "pardon", "you're coming through choppy", "static in your speech", "voice is cutting in and out"). 
-Do not ever mention "transcription error", and don't repeat yourself.
-- [Always stick to your role] Think about what your role can and cannot do. If your role cannot do something, try to steer the conversation back to the goal of the conversation and to your role. Don't repeat yourself in doing this. You should still be creative, human-like, and lively.
-- [Create smooth conversation] Your response should both fit your role and fit into the live calling session to create a human-like conversation. You respond directly to what the user just said.
-`;
-
-const systemPrompt = `
-${objective}
-${styleGuardrails}
-${responseGuideline}
-## Role
-${agentPrompt}
-`;
-
-export class FunctionCallingLlmClient {
+export class DemoLlmClient {
   private client: OpenAI;
 
   constructor() {
@@ -85,8 +17,138 @@ export class FunctionCallingLlmClient {
     });
   }
 
+  // Define the system prompt for Katie Scheduler
+  private systemPrompt = `
+## Identity & Purpose
+You are Katie Scheduler, a virtual assistant representing PestAway Solutions, a professional pest control provider serving San Antonio, TX, and surrounding areas. Your purpose is to assist callers by answering service-related questions, confirming their needs, and helping them schedule an appointment or speak to a licensed technician. Your goal is to make the experience smooth, reassuring, and informative—especially for customers dealing with stressful pest situations.
+
+## Voice & Persona
+
+### Personality
+- Sound professional, friendly, calm, and knowledgeable—like a helpful receptionist who's been with the company for years.
+- Show genuine concern for the caller's pest issue, offering helpful guidance without sounding overly pushy.
+- Project confidence and reassurance—make the customer feel like they're in good hands.
+- Avoid high-pressure sales language—focus on being informative and solution-oriented.
+
+### Speech Characteristics
+- Speak in a professional-friendly, happy tone. Think warm and inviting, not cartoonish.
+- Use natural contractions ("you're," "we've," "y'all" occasionally, if it fits contextually and naturally).
+- Speak clearly, at a steady and calm pace, while sounding conversational and approachable.
+- Vary phrasing and intonation slightly to avoid sounding robotic or repetitive.
+- Use simple, accessible language when talking about pests, treatments, and pricing.
+- Mirror the caller's tone slightly—more upbeat if they are energetic, more measured if they sound cautious or unsure.
+- Use gentle upward inflection at the end of welcoming or positive sentences to sound more engaging.
+- Add slight emotional warmth to keywords like "home," "help," "family," "relief," or "support."
+
+## Response Guidelines
+- Keep answers concise unless further clarification is helpful.
+- Ask one question at a time to keep the flow natural.
+- Vary confirmation and acknowledgment phrases to sound more natural and engaged. Use a rotating selection of responses like: "Got it.", "Okay.", "Thank you for that.", "Okay, great.", "Thanks for letting me know.", "Sounds good.", "Got it.", "I appreciate that.", "Great, thanks."
+  - Avoid repeating the same phrase back-to-back in a single conversation.
+  - Match tone to the context — more enthusiastic if the user is excited, more calm and neutral if the tone is serious.
+- Avoid technical jargon unless the homeowner uses it first.
+- Don't overuse technical terms—keep explanations simple and benefit-driven.
+- Always offer a clear next step (e.g., schedule a visit, connect with a tech).
+
+## Function Usage
+When a customer asks about availability or scheduling, use the check_calendar_tidycal function to check available time slots. Always be helpful and offer alternative times if the requested slot is not available.
+`;
+
+  // Define the functions available to the agent
+  private functions = [
+    {
+      type: "function",
+      function: {
+        name: "check_calendar_tidycal",
+        description: "Check calendar availability for pest control service appointments",
+        parameters: {
+          type: "object",
+          properties: {
+            requested_datetime: {
+              type: "string",
+              description: "Requested date and time in ISO format (YYYY-MM-DDTHH:MM:SS)"
+            },
+            service_type: {
+              type: "string",
+              description: "Type of pest control service requested",
+              default: "general_pest_control"
+            }
+          },
+          required: ["requested_datetime"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "end_call",
+        description: "End the call gracefully",
+        parameters: {
+          type: "object",
+          properties: {
+            reason: {
+              type: "string",
+              description: "Reason for ending the call"
+            }
+          },
+          required: ["reason"]
+        }
+      }
+    }
+  ];
+
+  // Function to handle N8N webhook calls
+  private async handleFunctionCall(functionName: string, parameters: any): Promise<string> {
+    // Map function names to n8n webhook endpoints
+    const webhookEndpoints = {
+      'check_calendar_tidycal': 'https://n8n-cloudhosted.onrender.com/webhook-test/c01d3726-2d0d-4f83-8adf-3b32f5354d2f',
+      'end_call': null // Handle locally
+    };
+
+    if (functionName === 'end_call') {
+      // Handle end_call locally
+      return JSON.stringify({ 
+        success: true, 
+        message: parameters.reason || "Thank you for calling PestAway Solutions! Have a great day!" 
+      });
+    }
+
+    const webhookUrl = webhookEndpoints[functionName];
+    if (!webhookUrl) {
+      return JSON.stringify({ error: `Unknown function: ${functionName}` });
+    }
+
+    try {
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          function_name: functionName,
+          parameters: parameters,
+          timestamp: new Date().toISOString()
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      return JSON.stringify(result);
+    } catch (error) {
+      console.error(`Error calling function ${functionName}:`, error);
+      return JSON.stringify({ 
+        error: `Failed to check calendar availability`,
+        details: error.message 
+      });
+    }
+  }
+
   // First sentence requested
   BeginMessage(ws: WebSocket) {
+    const beginSentence = "Hi there! I'm Katie from PestAway Solutions. How can I help you today?";
     const res: CustomLlmResponse = {
       response_type: "response",
       response_id: 0,
@@ -112,23 +174,20 @@ export class FunctionCallingLlmClient {
     request: ResponseRequiredRequest | ReminderRequiredRequest,
     funcResult?: FunctionCall,
   ) {
-    const transcript = this.ConversationToChatRequestMessages(
-      request.transcript,
-    );
-    const requestMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
-      [
-        {
-          role: "system",
-          content: systemPrompt,
-        },
-      ];
+    const transcript = this.ConversationToChatRequestMessages(request.transcript);
+    const requestMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+      {
+        role: "system",
+        content: this.systemPrompt,
+      },
+    ];
+
     for (const message of transcript) {
       requestMessages.push(message);
     }
 
-    // Populate func result to prompt so that GPT can know what to say given the result
+    // Add function result if available
     if (funcResult) {
-      // add function call to prompt
       requestMessages.push({
         role: "assistant",
         content: null,
@@ -143,7 +202,6 @@ export class FunctionCallingLlmClient {
           },
         ],
       });
-      // add function call result to prompt
       requestMessages.push({
         role: "tool",
         tool_call_id: funcResult.id,
@@ -157,71 +215,27 @@ export class FunctionCallingLlmClient {
         content: "(Now the user has not responded in a while, you would say:)",
       });
     }
+
     return requestMessages;
   }
-
-  // Step 2: Prepare the function calling definition to the prompt
-  // Done in tools import
 
   async DraftResponse(
     request: ResponseRequiredRequest | ReminderRequiredRequest,
     ws: WebSocket,
     funcResult?: FunctionCall,
   ) {
-    // If there are function call results, add it to prompt here.
-    const requestMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
-      this.PreparePrompt(request, funcResult);
-
+    console.clear();
+    console.log("req", request);
+    if (request.interaction_type === "update_only") {
+      // process live transcript update if needed
+      return;
+    }
+    const requestMessages = this.PreparePrompt(request, funcResult);
     let funcCall: FunctionCall | undefined;
     let funcArguments = "";
 
     try {
-      const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
-        {
-          type: "function",
-          function: {
-            name: "end_call",
-            description: "End the call only when user explicitly requests it.",
-            parameters: {
-              type: "object",
-              properties: {
-                message: {
-                  type: "string",
-                  description:
-                    "The message you will say before ending the call with the customer.",
-                },
-              },
-              required: ["message"],
-            },
-          },
-        },
-        {
-          type: "function",
-          function: {
-            name: "book_appointment",
-            description: "Book an appointment to meet our doctor in office.",
-            parameters: {
-              type: "object",
-              properties: {
-                message: {
-                  type: "string",
-                  description:
-                    "The message you will say while setting up the appointment like 'one moment'",
-                },
-                date: {
-                  type: "string",
-                  description:
-                    "The date of appointment to make in forms of year-month-day.",
-                },
-              },
-              required: ["message"],
-            },
-          },
-        },
-      ];
-
       const events = await this.client.chat.completions.create({
-        //model: "gpt-3.5-turbo-0125",
         model: "gpt-4-turbo-preview",
         messages: requestMessages,
         stream: true,
@@ -229,25 +243,20 @@ export class FunctionCallingLlmClient {
         max_tokens: 200,
         frequency_penalty: 1.0,
         presence_penalty: 1.0,
-        // Step 3: Add the  function into your requsts
-        tools: tools,
+        tools: this.functions,
       });
 
       for await (const event of events) {
         if (event.choices.length >= 1) {
           const delta = event.choices[0].delta;
-          //if (!delta || !delta.content) continue;
           if (!delta) continue;
 
-          // Step 4: Extract the functions
+          // Handle function calls
           if (delta.tool_calls && delta.tool_calls.length >= 1) {
             const toolCall = delta.tool_calls[0];
-            // Function calling here
             if (toolCall.id) {
               if (funcCall) {
-                // Another function received, old function complete, can break here
-                // You can also modify this to parse more functions to unlock parallel function calling
-                break;
+                break; // Another function received, old function complete
               } else {
                 funcCall = {
                   id: toolCall.id,
@@ -256,7 +265,6 @@ export class FunctionCallingLlmClient {
                 };
               }
             } else {
-              // append argument
               funcArguments += toolCall.function?.arguments || "";
             }
           } else if (delta.content) {
@@ -275,61 +283,59 @@ export class FunctionCallingLlmClient {
       console.error("Error in gpt stream: ", err);
     } finally {
       if (funcCall != null) {
-        // Step 5: Call the functions
-
-        // If it's to end the call, simply send a lst message and end the call
+        funcCall.arguments = JSON.parse(funcArguments);
+        
+        // Handle end_call function
         if (funcCall.funcName === "end_call") {
-          funcCall.arguments = JSON.parse(funcArguments);
           const res: CustomLlmResponse = {
             response_type: "response",
             response_id: request.response_id,
-            content: funcCall.arguments.message,
+            content: funcCall.arguments.message || "Thank you for calling PestAway Solutions!",
             content_complete: true,
             end_call: true,
           };
           ws.send(JSON.stringify(res));
-        }
-
-        // If it's to book appointment, say something and book appointment at the same time
-        // and then say something after booking is done
-        if (funcCall.funcName === "book_appointment") {
-          funcCall.arguments = JSON.parse(funcArguments);
-          const res: CustomLlmResponse = {
-            response_type: "response",
-            response_id: request.response_id,
-            // LLM will return the function name along with the message property we define
-            // In this case, "The message you will say while setting up the appointment like 'one moment' "
-            content: funcCall.arguments.message,
-            // If content_complete is false, it means AI will speak later.
-            // In our case, agent will say something to confirm the appointment, so we set it to false
-            content_complete: false,
-            end_call: false,
-          };
-          ws.send(JSON.stringify(res));
-
-          // To make the tool invocation show up in transcript
-          const functionInvocationResponse: CustomLlmResponse = {
-            response_type: "tool_call_invocation",
-            tool_call_id: funcCall.id,
-            name: funcCall.funcName,
-            arguments: JSON.stringify(funcCall.arguments)
-          };
-          ws.send(JSON.stringify(functionInvocationResponse));
-
-          // Sleep 2s to mimic the actual appointment booking
-          // Replace with your actual making appointment functions
-          await new Promise((r) => setTimeout(r, 2000));
-          funcCall.result = "Appointment booked successfully";
-
-          // To make the tool result show up in transcript
-          const functionResult: CustomLlmResponse = {
-            response_type: "tool_call_result",
-            tool_call_id: funcCall.id,
-            content: "Appointment booked successfully",
-          };
-          ws.send(JSON.stringify(functionResult));
-
-          this.DraftResponse(request, ws, funcCall);
+        } else {
+          // Handle other functions (like calendar check)
+          try {
+            const functionResult = await this.handleFunctionCall(funcCall.funcName, funcCall.arguments);
+            
+            // Parse the result to provide a meaningful response
+            const parsedResult = JSON.parse(functionResult);
+            let responseContent = "";
+            
+            if (parsedResult.available) {
+              responseContent = `Great! ${parsedResult.message}`;
+              if (parsedResult.suggested_times && parsedResult.suggested_times.length > 0) {
+                responseContent += ` I also have these alternative times available: ${parsedResult.suggested_times.join(", ")}.`;
+              }
+            } else {
+              responseContent = `I'm sorry, that time slot isn't available. Let me suggest some alternatives.`;
+              if (parsedResult.suggested_times && parsedResult.suggested_times.length > 0) {
+                responseContent += ` How about: ${parsedResult.suggested_times.join(", ")}?`;
+              }
+            }
+            
+            const res: CustomLlmResponse = {
+              response_type: "response",
+              response_id: request.response_id,
+              content: responseContent,
+              content_complete: true,
+              end_call: false,
+            };
+            ws.send(JSON.stringify(res));
+          } catch (error) {
+            console.error("Error handling function call:", error);
+            // Send error response
+            const res: CustomLlmResponse = {
+              response_type: "response",
+              response_id: request.response_id,
+              content: "I'm sorry, I'm having trouble checking our calendar right now. Let me transfer you to someone who can help.",
+              content_complete: true,
+              end_call: false,
+            };
+            ws.send(JSON.stringify(res));
+          }
         }
       } else {
         const res: CustomLlmResponse = {
