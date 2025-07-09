@@ -1,3 +1,4 @@
+import fetch from 'node-fetch';
 import OpenAI from "openai";
 import { WebSocket } from "ws";
 import {
