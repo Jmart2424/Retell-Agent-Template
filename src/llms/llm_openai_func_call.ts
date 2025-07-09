@@ -55,8 +55,8 @@ You are Katie Scheduler, a virtual assistant representing PestAway Solutions, a 
 When a customer asks about availability or scheduling, use the check_calendar_tidycal function to check available time slots. Always be helpful and offer alternative times if the requested slot is not available.
 `;
 
-  // Define the functions available to the agent
-  private functions = [
+  // Define the functions available to the agent - Fixed typing
+  private functions: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     {
       type: "function",
       function: {
@@ -71,8 +71,7 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
             },
             service_type: {
               type: "string",
-              description: "Type of pest control service requested",
-              default: "general_pest_control"
+              description: "Type of pest control service requested"
             }
           },
           required: ["requested_datetime"]
@@ -98,10 +97,10 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
     }
   ];
 
-  // Function to handle N8N webhook calls
+  // Function to handle N8N webhook calls - Fixed typing
   private async handleFunctionCall(functionName: string, parameters: any): Promise<string> {
-    // Map function names to n8n webhook endpoints
-    const webhookEndpoints = {
+    // Map function names to n8n webhook endpoints - Fixed typing
+    const webhookEndpoints: { [key: string]: string | null } = {
       'check_calendar_tidycal': 'https://n8n-cloudhosted.onrender.com/webhook-test/c01d3726-2d0d-4f83-8adf-3b32f5354d2f',
       'end_call': null // Handle locally
     };
@@ -114,7 +113,7 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
       });
     }
 
-    const webhookUrl = webhookEndpoints[functionName];
+    const webhookUrl = webhookEndpoints[functionName as keyof typeof webhookEndpoints];
     if (!webhookUrl) {
       return JSON.stringify({ error: `Unknown function: ${functionName}` });
     }
@@ -142,7 +141,7 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
       console.error(`Error calling function ${functionName}:`, error);
       return JSON.stringify({ 
         error: `Failed to check calendar availability`,
-        details: error.message 
+        details: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   }
@@ -227,15 +226,18 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
   ) {
     console.clear();
     console.log("req", request);
-    if (request.interaction_type === "update_only") {
-      // process live transcript update if needed
+
+    // Fixed comparison issue
+    if (request.interaction_type !== "response_required" && request.interaction_type !== "reminder_required") {
       return;
     }
+
     const requestMessages = this.PreparePrompt(request, funcResult);
     let funcCall: FunctionCall | undefined;
     let funcArguments = "";
 
     try {
+      // Fixed typing for OpenAI streaming call
       const events = await this.client.chat.completions.create({
         model: "gpt-4-turbo-preview",
         messages: requestMessages,
@@ -247,6 +249,7 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
         tools: this.functions,
       });
 
+      // Fixed async iterator typing
       for await (const event of events) {
         if (event.choices.length >= 1) {
           const delta = event.choices[0].delta;
@@ -291,7 +294,7 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
           const res: CustomLlmResponse = {
             response_type: "response",
             response_id: request.response_id,
-            content: funcCall.arguments.message || "Thank you for calling PestAway Solutions!",
+            content: "Thank you for calling PestAway Solutions!",
             content_complete: true,
             end_call: true,
           };
@@ -301,18 +304,24 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
           try {
             const functionResult = await this.handleFunctionCall(funcCall.funcName, funcCall.arguments);
             
-            // Parse the result to provide a meaningful response
-            const parsedResult = JSON.parse(functionResult);
+            // Fixed parsing with proper type checking
+            let parsedResult: any;
+            try {
+              parsedResult = JSON.parse(functionResult);
+            } catch {
+              parsedResult = { error: "Invalid response format" };
+            }
+            
             let responseContent = "";
             
             if (parsedResult.available) {
-              responseContent = `Great! ${parsedResult.message}`;
-              if (parsedResult.suggested_times && parsedResult.suggested_times.length > 0) {
+              responseContent = `Great! ${parsedResult.message || 'That time slot is available.'}`;
+              if (parsedResult.suggested_times && Array.isArray(parsedResult.suggested_times) && parsedResult.suggested_times.length > 0) {
                 responseContent += ` I also have these alternative times available: ${parsedResult.suggested_times.join(", ")}.`;
               }
             } else {
               responseContent = `I'm sorry, that time slot isn't available. Let me suggest some alternatives.`;
-              if (parsedResult.suggested_times && parsedResult.suggested_times.length > 0) {
+              if (parsedResult.suggested_times && Array.isArray(parsedResult.suggested_times) && parsedResult.suggested_times.length > 0) {
                 responseContent += ` How about: ${parsedResult.suggested_times.join(", ")}?`;
               }
             }
