@@ -1,11 +1,12 @@
 {
-  "name": "retell-backend-node-demo",
+  "name": "katie-scheduler-agent",
   "version": "1.0.0",
-  "description": "Example backend written in node. This aims to help people get started connecting their LLM.",
-  "main": "index.js",
+  "description": "Katie Scheduler agent for PestAway Solutions with N8N webhook integration",
+  "main": "dist/index.js",
   "scripts": {
-    "dev": "NODE_ENV=development nodemon src/index.ts",
-    "start": "ts-node src/index.ts"
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "NODE_ENV=development nodemon --exec ts-node src/index.ts"
   },
   "author": "",
   "license": "ISC",
@@ -16,13 +17,17 @@
     "express": "^4.18.2",
     "express-ws": "^5.0.2",
     "openai": "^4.26.0",
-    "retell-sdk": "^4.6.0"
+    "retell-sdk": "^4.6.0",
+    "node-fetch": "^2.7.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/express-ws": "^3.0.4",
+    "@types/node-fetch": "^2.6.0",
+    "@types/node": "^20.0.0",
     "nodemon": "^3.0.3",
-    "ts-node": "^10.9.2"
+    "ts-node": "^10.9.2",
+    "typescript": "^5.0.0"
   }
 }
