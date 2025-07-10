@@ -81,7 +81,7 @@ export class Server {
           };
           ws.send(JSON.stringify(config));
 
-          // FIXED: Use the correct class from your updated file
+          // Create the LLM client instance
           const llmClient = new DemoLlmClient();
 
           ws.on("error", (err) => {
@@ -100,7 +100,50 @@ export class Server {
 
             if (request.interaction_type === "call_details") {
               console.log("call details: ", request.call);
+
+              // NEW: Automatically trigger GHL lookup at the start of every call
+              const callerPhone = request.call?.from ?? "";
+              if (callerPhone) {
+                try {
+                  console.log(`Triggering GHL lookup for phone: ${callerPhone}`);
+                  
+                  // Call the GHL lookup webhook immediately
+                  const lookupResult = await llmClient.handleFunctionCall(
+                    "ghl_lookup",
+                    { phone: callerPhone }
+                  );
+
+                  console.log("GHL lookup completed:", lookupResult);
+
+                  // Send the lookup result as a tool call result to the conversation
+                  const toolResultMessage: CustomLlmResponse = {
+                    response_type: "tool_call_result",
+                    tool_call_id: "ghl_lookup_init",
+                    content: lookupResult
+                  };
+                  ws.send(JSON.stringify(toolResultMessage));
+
+                } catch (error) {
+                  console.error("GHL lookup failed:", error);
+                  
+                  // Send an error result so the LLM knows the lookup failed
+                  const errorMessage: CustomLlmResponse = {
+                    response_type: "tool_call_result",
+                    tool_call_id: "ghl_lookup_init",
+                    content: JSON.stringify({ 
+                      error: "Failed to lookup contact information",
+                      details: error instanceof Error ? error.message : 'Unknown error'
+                    })
+                  };
+                  ws.send(JSON.stringify(errorMessage));
+                }
+              } else {
+                console.log("No caller phone number available for GHL lookup");
+              }
+
+              // Send the greeting after the lookup
               llmClient.BeginMessage(ws);
+              
             } else if (
               request.interaction_type === "reminder_required" ||
               request.interaction_type === "response_required"
