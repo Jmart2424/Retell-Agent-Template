@@ -5,25 +5,22 @@ import { createServer, Server as HTTPServer } from "http";
 import cors from "cors";
 import { Retell } from "retell-sdk";
 import { CustomLlmRequest, CustomLlmResponse } from "./types";
-
-// FIXED: Import from the correct file where you updated Katie Scheduler
 import { DemoLlmClient } from "./llms/llm_openai_func_call";
 
 export class Server {
   private httpServer: HTTPServer;
-  public app: expressWs.Application;
+  public  app: expressWs.Application;
 
   constructor() {
     this.app = expressWs(express()).app;
     this.httpServer = createServer(this.app);
+
     this.app.use(express.json());
     this.app.use(cors());
     this.app.use(express.urlencoded({ extended: true }));
 
-    // Health check endpoint for Railway/Render
-    this.app.get('/', (req: Request, res: Response) => {
-      res.send('OK');
-    });
+    /* simple health check */
+    this.app.get("/", (_req, res) => res.send("OK"));
 
     this.handleRetellLlmWebSocket();
     this.handleWebhook();
@@ -31,162 +28,123 @@ export class Server {
 
   listen(port: number): void {
     this.app.listen(port);
-    console.log("Listening on " + port);
+    console.log("Listening on", port);
   }
 
-  /* Handle webhook from Retell server. This is used to receive events from Retell server.
-     Including call_started, call_ended, call_analyzed */
-  handleWebhook() {
+  /* ----------  Retell event webhooks (optional) ---------- */
+  private handleWebhook() {
     this.app.post("/webhook", (req: Request, res: Response) => {
       if (
         !Retell.verify(
           JSON.stringify(req.body),
           process.env.RETELL_API_KEY,
-          req.headers["x-retell-signature"] as string,
+          req.headers["x-retell-signature"] as string
         )
       ) {
-        console.error("Invalid signature");
-        return;
+        console.error("Invalid Retell signature"); return;
       }
-      const content = req.body;
-      switch (content.event) {
-        case "call_started":
-          console.log("Call started event received", content.data.call_id);
-          break;
-        case "call_ended":
-          console.log("Call ended event received", content.data.call_id);
-          break;
-        case "call_analyzed":
-          console.log("Call analyzed event received", content.data.call_id);
-          break;
-        default:
-          console.log("Received an unknown event:", content.event);
-      }
-      // Acknowledge the receipt of the event
+      console.log("Retell event:", req.body.event);
       res.json({ received: true });
     });
   }
 
-  /* Start a websocket server to exchange text input and output with Retell server. Retell server 
-     will send over transcriptions and other information. This server here will be responsible for
-     generating responses with LLM and send back to Retell server.*/
-  handleRetellLlmWebSocket() {
-    this.app.ws(
-      "/llm-websocket/:call_id",
-      async (ws: WebSocket, req: Request) => {
-        try {
-          const callId = req.params.call_id;
-          console.log("Handle llm ws for: ", callId);
+  /* ----------  Main LLM WebSocket bridge  ---------- */
+  private handleRetellLlmWebSocket() {
+    this.app.ws("/llm-websocket/:call_id", async (ws, req) => {
+      const callId = req.params.call_id;
+      console.log("LLM socket opened for", callId);
 
-          // Send config to Retell server
-          const config: CustomLlmResponse = {
-            response_type: "config",
-            config: {
-              auto_reconnect: true,
-              call_details: true,
-            },
-          };
-          ws.send(JSON.stringify(config));
+      /* 1. Send initial config so Retell starts streaming */
+      const cfg: CustomLlmResponse = {
+        response_type: "config",
+        config: { auto_reconnect: true, call_details: true }
+      };
+      ws.send(JSON.stringify(cfg));
 
-          // Start sending the begin message to signal the client is ready.
-          const llmClient = new DemoLlmClient();
+      /* 2. Create LLM helper */
+      const llmClient = new DemoLlmClient();
 
-          ws.on("error", (err) => {
-            console.error("Error received in LLM websocket client: ", err);
-          });
-          ws.on("close", (err) => {
-            console.error("Closing llm ws for: ", callId);
-          });
+      ws.on("error", e => console.error("ws error:", e));
+      ws.on("close", () => console.log("ws closed for", callId));
 
-          ws.on("message", async (data: RawData, isBinary: boolean) => {
-            if (isBinary) {
-              console.error("Got binary message instead of text in websocket.");
-              ws.close(1007, "Cannot find corresponding Retell LLM.");
-            }
-            const request: CustomLlmRequest = JSON.parse(data.toString());
-
-            // There are 5 types of interaction_type: call_details, ping_pong, update_only,response_required, and reminder_required.
-            // Not all of them need to be handled, only response_required and reminder_required.
-            if (request.interaction_type === "call_details") {
-              // print call details
-              console.log("call details: ", request.call);
-              console.log("Full call_details payload:", JSON.stringify(request.call, null, 2));
-
-              // NEW: Automatically trigger GHL lookup at the start of every call
-              // Extract phone from all known Retell paths
-              const callerPhone = 
-                request.call?.customer?.phone ||
-                request.call?.customer?.number ||
-                request.call?.caller?.phone ||
-                request.call?.from ||
-                request.call?.to ||
-                "";
-
-              console.log("Extracted caller phone:", callerPhone);
-
-              if (callerPhone) {
-                try {
-                  console.log(`Triggering GHL lookup for phone: ${callerPhone}`);
-                  
-                  // Call the GHL lookup webhook immediately
-                  const lookupResult = await llmClient.handleFunctionCall(
-                    "ghl_lookup",
-                    { phone: callerPhone }
-                  );
-
-                  console.log("GHL lookup completed:", lookupResult);
-
-                  // Send the lookup result as a tool call result to the conversation
-                  const toolResultMessage: CustomLlmResponse = {
-                    response_type: "tool_call_result",
-                    tool_call_id: "ghl_lookup_init",
-                    content: lookupResult
-                  };
-                  ws.send(JSON.stringify(toolResultMessage));
-
-                } catch (error) {
-                  console.error("GHL lookup failed:", error);
-                  
-                  // Send an error result so the LLM knows the lookup failed
-                  const errorMessage: CustomLlmResponse = {
-                    response_type: "tool_call_result",
-                    tool_call_id: "ghl_lookup_init",
-                    content: JSON.stringify({ 
-                      error: "Failed to lookup contact information",
-                      details: error instanceof Error ? error.message : 'Unknown error'
-                    })
-                  };
-                  ws.send(JSON.stringify(errorMessage));
-                }
-              } else {
-                console.log("No caller phone number available for GHL lookup");
-                console.log("Available call data paths:", Object.keys(request.call || {}));
-              }
-
-              // Send begin message to start the conversation
-              llmClient.BeginMessage(ws);
-            } else if (
-              request.interaction_type === "reminder_required" ||
-              request.interaction_type === "response_required"
-            ) {
-              console.clear();
-              console.log("req", request);
-              llmClient.DraftResponse(request, ws);
-            } else if (request.interaction_type === "ping_pong") {
-              let pingpongResponse: CustomLlmResponse = {
-                response_type: "ping_pong",
-                timestamp: request.timestamp,
-              };
-              ws.send(JSON.stringify(pingpongResponse));
-            } else if (request.interaction_type === "update_only") {
-              // process live transcript update if needed
-            }
-          });
-        } catch (err) {
-          console.error("Encountered error:", err);
-          ws.close(1011, "Encountered error: " + err);
+      /* 3. Handle inbound websocket messages */
+      ws.on("message", async (data: RawData, isBinary: boolean) => {
+        if (isBinary) {
+          ws.close(1007, "binary frames unsupported"); return;
         }
-      },
-    );
+
+        const request: CustomLlmRequest = JSON.parse(data.toString());
+
+        /* ----------  CALL_DETAILS  ---------- */
+        if (request.interaction_type === "call_details") {
+          console.log("call_details payload:", JSON.stringify(request.call, null, 2));
+
+          /* Extract phone from every known Retell path */
+          const phone =
+              request.call?.customer?.phone        ??
+              request.call?.customer?.number       ??
+              request.call?.caller?.phone          ??
+              request.call?.contact?.phone         ??
+              request.call?.phoneNumber            ??
+              request.call?.from                   ??
+              request.call?.to                     ??
+              "";
+
+          console.log("Caller phone resolved to:", phone || "<empty>");
+
+          /* Perform GHL lookup (even if phone empty, for debugging) */
+          try {
+            const lookupJson = await llmClient.handleFunctionCall(
+              "ghl_lookup",
+              { phone }
+            );
+            console.log("GHL lookup response:", lookupJson);
+
+            /* Feed the result to the LLM as a tool result */
+            const toolMsg: CustomLlmResponse = {
+              response_type: "tool_call_result",
+              tool_call_id: "ghl_lookup_init",
+              content: lookupJson
+            };
+            ws.send(JSON.stringify(toolMsg));
+          } catch (err) {
+            console.error("GHL lookup failed:", err);
+            const errMsg: CustomLlmResponse = {
+              response_type: "tool_call_result",
+              tool_call_id: "ghl_lookup_init",
+              content: JSON.stringify({
+                error: "Lookup failed",
+                details: err instanceof Error ? err.message : "unknown"
+              })
+            };
+            ws.send(JSON.stringify(errMsg));
+          }
+
+          /* Always send greeting AFTER lookup attempt */
+          llmClient.BeginMessage(ws);
+          return;
+        }
+
+        /* ----------  NORMAL TURNS  ---------- */
+        if (
+          request.interaction_type === "response_required" ||
+          request.interaction_type === "reminder_required"
+        ) {
+          llmClient.DraftResponse(request, ws);
+          return;
+        }
+
+        /* ----------  KEEP-ALIVE  ---------- */
+        if (request.interaction_type === "ping_pong") {
+          const pong: CustomLlmResponse = {
+            response_type: "ping_pong",
+            timestamp: request.timestamp
+          };
+          ws.send(JSON.stringify(pong));
+        }
+
+        /* update_only messages need no action */
+      });
+    });
   }
 }
