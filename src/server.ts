@@ -34,6 +34,8 @@ export class Server {
     console.log("Listening on " + port);
   }
 
+  /* Handle webhook from Retell server. This is used to receive events from Retell server.
+     Including call_started, call_ended, call_analyzed */
   handleWebhook() {
     this.app.post("/webhook", (req: Request, res: Response) => {
       if (
@@ -60,10 +62,14 @@ export class Server {
         default:
           console.log("Received an unknown event:", content.event);
       }
+      // Acknowledge the receipt of the event
       res.json({ received: true });
     });
   }
 
+  /* Start a websocket server to exchange text input and output with Retell server. Retell server 
+     will send over transcriptions and other information. This server here will be responsible for
+     generating responses with LLM and send back to Retell server.*/
   handleRetellLlmWebSocket() {
     this.app.ws(
       "/llm-websocket/:call_id",
@@ -72,6 +78,7 @@ export class Server {
           const callId = req.params.call_id;
           console.log("Handle llm ws for: ", callId);
 
+          // Send config to Retell server
           const config: CustomLlmResponse = {
             response_type: "config",
             config: {
@@ -81,7 +88,7 @@ export class Server {
           };
           ws.send(JSON.stringify(config));
 
-          // Create the LLM client instance
+          // Start sending the begin message to signal the client is ready.
           const llmClient = new DemoLlmClient();
 
           ws.on("error", (err) => {
@@ -98,11 +105,25 @@ export class Server {
             }
             const request: CustomLlmRequest = JSON.parse(data.toString());
 
+            // There are 5 types of interaction_type: call_details, ping_pong, update_only,response_required, and reminder_required.
+            // Not all of them need to be handled, only response_required and reminder_required.
             if (request.interaction_type === "call_details") {
+              // print call details
               console.log("call details: ", request.call);
+              console.log("Full call_details payload:", JSON.stringify(request.call, null, 2));
 
               // NEW: Automatically trigger GHL lookup at the start of every call
-              const callerPhone = request.call?.from ?? "";
+              // Extract phone from all known Retell paths
+              const callerPhone = 
+                request.call?.customer?.phone ||
+                request.call?.customer?.number ||
+                request.call?.caller?.phone ||
+                request.call?.from ||
+                request.call?.to ||
+                "";
+
+              console.log("Extracted caller phone:", callerPhone);
+
               if (callerPhone) {
                 try {
                   console.log(`Triggering GHL lookup for phone: ${callerPhone}`);
@@ -139,11 +160,11 @@ export class Server {
                 }
               } else {
                 console.log("No caller phone number available for GHL lookup");
+                console.log("Available call data paths:", Object.keys(request.call || {}));
               }
 
-              // Send the greeting after the lookup
+              // Send begin message to start the conversation
               llmClient.BeginMessage(ws);
-              
             } else if (
               request.interaction_type === "reminder_required" ||
               request.interaction_type === "response_required"
