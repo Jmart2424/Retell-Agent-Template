@@ -14,12 +14,12 @@ export class DemoLlmClient {
 
   constructor() {
     this.client = new OpenAI({
-      apiKey: process.env.OPENAI_APIKEY, // This should be your Groq API key (gsk_...)
-      baseURL: "https://api.groq.com/openai/v1", // Groq's OpenAI-compatible endpoint
+      apiKey: process.env.OPENAI_APIKEY, // Groq API key
+      baseURL: "https://api.groq.com/openai/v1",
     });
   }
 
-  // Define the system prompt for Katie Scheduler
+  // Katie Scheduler system prompt
   private systemPrompt = `
 ## Identity & Purpose
 You are Katie Scheduler, a virtual assistant representing PestAway Solutions, a professional pest control provider serving San Antonio, TX, and surrounding areas. Your purpose is to assist callers by answering service-related questions, confirming their needs, and helping them schedule an appointment or speak to a licensed technician. Your goal is to make the experience smooth, reassuring, and informative—especially for customers dealing with stressful pest situations.
@@ -56,7 +56,7 @@ You are Katie Scheduler, a virtual assistant representing PestAway Solutions, a 
 When a customer asks about availability or scheduling, use the check_calendar_tidycal function to check available time slots. Always be helpful and offer alternative times if the requested slot is not available.
 `;
 
-  // Define the functions available to the agent
+  // Define available functions
   private functions: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     {
       type: "function",
@@ -76,6 +76,27 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
             }
           },
           required: ["requested_datetime"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "ghl_lookup",
+        description: "Lookup contact information in GoHighLevel CRM system",
+        parameters: {
+          type: "object",
+          properties: {
+            phone: {
+              type: "string",
+              description: "Phone number to lookup in GoHighLevel"
+            },
+            email: {
+              type: "string",
+              description: "Email address to lookup (optional)"
+            }
+          },
+          required: ["phone"]
         }
       }
     },
@@ -102,6 +123,7 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
   private async handleFunctionCall(functionName: string, parameters: any): Promise<string> {
     const webhookEndpoints: { [key: string]: string | null } = {
       'check_calendar_tidycal': 'https://n8n-cloudhosted.onrender.com/webhook-test/c01d3726-2d0d-4f83-8adf-3b32f5354d2f',
+      'ghl_lookup': 'https://n8n-cloudhosted.onrender.com/webhook-test/894adbcb-6c82-4c25-b0e7-a1d973266aad',
       'end_call': null
     };
 
@@ -139,7 +161,7 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
     } catch (error) {
       console.error(`Error calling function ${functionName}:`, error);
       return JSON.stringify({ 
-        error: `Failed to check calendar availability`,
+        error: `Failed to execute ${functionName}`,
         details: error instanceof Error ? error.message : 'Unknown error'
       });
     }
@@ -236,7 +258,7 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
 
     try {
       const events = await this.client.chat.completions.create({
-        model: "llama3-70b-8192", // Groq-supported model
+        model: "llama3-70b-8192",
         messages: requestMessages,
         stream: true,
         temperature: 0.1,
@@ -261,12 +283,10 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
                 funcName: toolCall.function.name,
                 arguments: {},
               };
-              // Wait for the rest of the arguments if chunked
               continue;
             }
           } else if (funcCall && funcArguments && !toolCallHandled) {
             funcCall.arguments = JSON.parse(funcArguments);
-            // Call your webhook
             const functionResult = await this.handleFunctionCall(funcCall.funcName, funcCall.arguments);
 
             let parsedResult: any;
@@ -282,6 +302,8 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
               if (parsedResult.suggested_times && Array.isArray(parsedResult.suggested_times) && parsedResult.suggested_times.length > 0) {
                 responseContent += ` I also have these alternative times available: ${parsedResult.suggested_times.join(", ")}.`;
               }
+            } else if (parsedResult.success && funcCall.funcName === "ghl_lookup") {
+              responseContent = parsedResult.message || "Contact information found.";
             } else {
               responseContent = `I'm sorry, that time slot isn't available. Let me suggest some alternatives.`;
               if (parsedResult.suggested_times && Array.isArray(parsedResult.suggested_times) && parsedResult.suggested_times.length > 0) {
@@ -298,9 +320,8 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
             };
             ws.send(JSON.stringify(res));
             toolCallHandled = true;
-            break; // Stop processing further streaming events
+            break;
           } else if (delta.content && !toolCallHandled) {
-            // Only send plain content if no tool call is being handled
             const res: CustomLlmResponse = {
               response_type: "response",
               response_id: request.response_id,
