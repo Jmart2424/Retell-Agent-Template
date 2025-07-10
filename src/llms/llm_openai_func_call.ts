@@ -235,7 +235,7 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
     try {
       // Use a Groq-supported model (for example: "llama-3-70b-8192" or "mixtral-8x7b-32768")
       const events = await this.client.chat.completions.create({
-        model: "llama-3-70b-8192", // Change to your preferred Groq model
+        model: "llama3-70b-8192", // Change to your preferred Groq model
         messages: requestMessages,
         stream: true,
         temperature: 0.1,
