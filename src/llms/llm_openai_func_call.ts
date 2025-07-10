@@ -229,13 +229,14 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
     }
 
     const requestMessages = this.PreparePrompt(request, funcResult);
+
     let funcCall: FunctionCall | undefined;
     let funcArguments = "";
+    let toolCallHandled = false;
 
     try {
-      // Use a Groq-supported model (for example: "llama-3-70b-8192" or "mixtral-8x7b-32768")
       const events = await this.client.chat.completions.create({
-        model: "llama3-70b-8192", // Change to your preferred Groq model
+        model: "llama3-70b-8192", // Groq-supported model
         messages: requestMessages,
         stream: true,
         temperature: 0.1,
@@ -250,50 +251,22 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
           const delta = event.choices[0].delta;
           if (!delta) continue;
 
-          if (delta.tool_calls && delta.tool_calls.length >= 1) {
+          // Handle tool/function call
+          if (delta.tool_calls && delta.tool_calls.length > 0 && !toolCallHandled) {
             const toolCall = delta.tool_calls[0];
-            if (toolCall.id) {
-              if (funcCall) {
-                break;
-              } else {
-                funcCall = {
-                  id: toolCall.id,
-                  funcName: toolCall.function?.name || "",
-                  arguments: {},
-                };
-              }
-            } else {
-              funcArguments += toolCall.function?.arguments || "";
+            if (toolCall.id && toolCall.function?.name) {
+              funcArguments += toolCall.function.arguments || "";
+              funcCall = {
+                id: toolCall.id,
+                funcName: toolCall.function.name,
+                arguments: {},
+              };
+              // Wait for the rest of the arguments if chunked
+              continue;
             }
-          } else if (delta.content) {
-            const res: CustomLlmResponse = {
-              response_type: "response",
-              response_id: request.response_id,
-              content: delta.content,
-              content_complete: false,
-              end_call: false,
-            };
-            ws.send(JSON.stringify(res));
-          }
-        }
-      }
-    } catch (err) {
-      console.error("Error in gpt stream: ", err);
-    } finally {
-      if (funcCall != null) {
-        funcCall.arguments = JSON.parse(funcArguments);
-
-        if (funcCall.funcName === "end_call") {
-          const res: CustomLlmResponse = {
-            response_type: "response",
-            response_id: request.response_id,
-            content: "Thank you for calling PestAway Solutions!",
-            content_complete: true,
-            end_call: true,
-          };
-          ws.send(JSON.stringify(res));
-        } else {
-          try {
+          } else if (funcCall && funcArguments && !toolCallHandled) {
+            funcCall.arguments = JSON.parse(funcArguments);
+            // Call your webhook
             const functionResult = await this.handleFunctionCall(funcCall.funcName, funcCall.arguments);
 
             let parsedResult: any;
@@ -304,7 +277,6 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
             }
 
             let responseContent = "";
-
             if (parsedResult.available) {
               responseContent = `Great! ${parsedResult.message || 'That time slot is available.'}`;
               if (parsedResult.suggested_times && Array.isArray(parsedResult.suggested_times) && parsedResult.suggested_times.length > 0) {
@@ -325,25 +297,31 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
               end_call: false,
             };
             ws.send(JSON.stringify(res));
-          } catch (error) {
-            console.error("Error handling function call:", error);
+            toolCallHandled = true;
+            break; // Stop processing further streaming events
+          } else if (delta.content && !toolCallHandled) {
+            // Only send plain content if no tool call is being handled
             const res: CustomLlmResponse = {
               response_type: "response",
               response_id: request.response_id,
-              content: "I'm sorry, I'm having trouble checking our calendar right now. Let me transfer you to someone who can help.",
-              content_complete: true,
+              content: delta.content,
+              content_complete: false,
               end_call: false,
             };
             ws.send(JSON.stringify(res));
           }
         }
-      } else {
+      }
+    } catch (err) {
+      console.error("Error in gpt stream: ", err);
+    } finally {
+      if (funcCall && funcCall.funcName === "end_call") {
         const res: CustomLlmResponse = {
           response_type: "response",
           response_id: request.response_id,
-          content: "",
+          content: "Thank you for calling PestAway Solutions!",
           content_complete: true,
-          end_call: false,
+          end_call: true,
         };
         ws.send(JSON.stringify(res));
       }
