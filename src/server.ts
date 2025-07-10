@@ -6,14 +6,8 @@ import cors from "cors";
 import { Retell } from "retell-sdk";
 import { CustomLlmRequest, CustomLlmResponse } from "./types";
 
-// FIXED: Use the OpenAI file where you updated Katie Scheduler
+// FIXED: Import from the correct file where you updated Katie Scheduler
 import { DemoLlmClient } from "./llms/llm_openai_func_call";
-
-// Commented out the wrong imports
-// import { FunctionCallingLlmClient } from "./llms/llm_azure_openai_func_call";
-// import { DemoLlmClient } from "./llms/llm_azure_openai";
-// import { FunctionCallingLlmClient } from "./llms/llm_azure_openai_func_call_end_call";
-// import { DemoLlmClient } from "./llms/llm_openrouter";
 
 export class Server {
   private httpServer: HTTPServer;
@@ -40,8 +34,6 @@ export class Server {
     console.log("Listening on " + port);
   }
 
-  /* Handle webhook from Retell server. This is used to receive events from Retell server.
-     Including call_started, call_ended, call_analyzed */
   handleWebhook() {
     this.app.post("/webhook", (req: Request, res: Response) => {
       if (
@@ -68,14 +60,10 @@ export class Server {
         default:
           console.log("Received an unknown event:", content.event);
       }
-      // Acknowledge the receipt of the event
       res.json({ received: true });
     });
   }
 
-  /* Start a websocket server to exchange text input and output with Retell server. Retell server 
-     will send over transcriptions and other information. This server here will be responsible for
-     generating responses with LLM and send back to Retell server.*/
   handleRetellLlmWebSocket() {
     this.app.ws(
       "/llm-websocket/:call_id",
@@ -84,7 +72,6 @@ export class Server {
           const callId = req.params.call_id;
           console.log("Handle llm ws for: ", callId);
 
-          // Send config to Retell server
           const config: CustomLlmResponse = {
             response_type: "config",
             config: {
@@ -94,7 +81,7 @@ export class Server {
           };
           ws.send(JSON.stringify(config));
 
-          // FIXED: Use DemoLlmClient from the OpenAI file you updated
+          // FIXED: Use the correct class from your updated file
           const llmClient = new DemoLlmClient();
 
           ws.on("error", (err) => {
@@ -111,12 +98,31 @@ export class Server {
             }
             const request: CustomLlmRequest = JSON.parse(data.toString());
 
-            // There are 5 types of interaction_type: call_details, ping_pong, update_only,response_required, and reminder_required.
-            // Not all of them need to be handled, only response_required and reminder_required.
             if (request.interaction_type === "call_details") {
-              // print call details
               console.log("call details: ", request.call);
-              // Send begin message to start the conversation
               llmClient.BeginMessage(ws);
             } else if (
-              request.interaction_type === "
+              request.interaction_type === "reminder_required" ||
+              request.interaction_type === "response_required"
+            ) {
+              console.clear();
+              console.log("req", request);
+              llmClient.DraftResponse(request, ws);
+            } else if (request.interaction_type === "ping_pong") {
+              let pingpongResponse: CustomLlmResponse = {
+                response_type: "ping_pong",
+                timestamp: request.timestamp,
+              };
+              ws.send(JSON.stringify(pingpongResponse));
+            } else if (request.interaction_type === "update_only") {
+              // process live transcript update if needed
+            }
+          });
+        } catch (err) {
+          console.error("Encountered error:", err);
+          ws.close(1011, "Encountered error: " + err);
+        }
+      },
+    );
+  }
+}
