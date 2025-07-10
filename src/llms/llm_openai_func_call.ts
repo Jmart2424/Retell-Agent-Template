@@ -14,7 +14,8 @@ export class DemoLlmClient {
 
   constructor() {
     this.client = new OpenAI({
-      apiKey: process.env.OPENAI_APIKEY,
+      apiKey: process.env.OPENAI_APIKEY, // This should be your Groq API key (gsk_...)
+      baseURL: "https://api.groq.com/openai/v1", // Groq's OpenAI-compatible endpoint
     });
   }
 
@@ -55,7 +56,7 @@ You are Katie Scheduler, a virtual assistant representing PestAway Solutions, a 
 When a customer asks about availability or scheduling, use the check_calendar_tidycal function to check available time slots. Always be helpful and offer alternative times if the requested slot is not available.
 `;
 
-  // Define the functions available to the agent - Fixed typing
+  // Define the functions available to the agent
   private functions: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     {
       type: "function",
@@ -97,16 +98,14 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
     }
   ];
 
-  // Function to handle N8N webhook calls - Fixed typing
+  // Function to handle N8N webhook calls
   private async handleFunctionCall(functionName: string, parameters: any): Promise<string> {
-    // Map function names to n8n webhook endpoints - Fixed typing
     const webhookEndpoints: { [key: string]: string | null } = {
       'check_calendar_tidycal': 'https://n8n-cloudhosted.onrender.com/webhook-test/c01d3726-2d0d-4f83-8adf-3b32f5354d2f',
-      'end_call': null // Handle locally
+      'end_call': null
     };
 
     if (functionName === 'end_call') {
-      // Handle end_call locally
       return JSON.stringify({ 
         success: true, 
         message: parameters.reason || "Thank you for calling PestAway Solutions! Have a great day!" 
@@ -146,7 +145,6 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
     }
   }
 
-  // First sentence requested
   BeginMessage(ws: WebSocket) {
     const beginSentence = "Hi there! I'm Katie from PestAway Solutions. How can I help you today?";
     const res: CustomLlmResponse = {
@@ -186,7 +184,6 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
       requestMessages.push(message);
     }
 
-    // Add function result if available
     if (funcResult) {
       requestMessages.push({
         role: "assistant",
@@ -227,7 +224,6 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
     console.clear();
     console.log("req", request);
 
-    // Fixed comparison issue
     if (request.interaction_type !== "response_required" && request.interaction_type !== "reminder_required") {
       return;
     }
@@ -237,9 +233,9 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
     let funcArguments = "";
 
     try {
-      // Fixed typing for OpenAI streaming call
+      // Use a Groq-supported model (for example: "llama-3-70b-8192" or "mixtral-8x7b-32768")
       const events = await this.client.chat.completions.create({
-        model: "gpt-4-turbo-preview",
+        model: "llama-3-70b-8192", // Change to your preferred Groq model
         messages: requestMessages,
         stream: true,
         temperature: 0.1,
@@ -249,18 +245,16 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
         tools: this.functions,
       });
 
-      // Fixed async iterator typing
-      for await (const event of events) {
+      for await (const event of events as any) {
         if (event.choices.length >= 1) {
           const delta = event.choices[0].delta;
           if (!delta) continue;
 
-          // Handle function calls
           if (delta.tool_calls && delta.tool_calls.length >= 1) {
             const toolCall = delta.tool_calls[0];
             if (toolCall.id) {
               if (funcCall) {
-                break; // Another function received, old function complete
+                break;
               } else {
                 funcCall = {
                   id: toolCall.id,
@@ -288,8 +282,7 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
     } finally {
       if (funcCall != null) {
         funcCall.arguments = JSON.parse(funcArguments);
-        
-        // Handle end_call function
+
         if (funcCall.funcName === "end_call") {
           const res: CustomLlmResponse = {
             response_type: "response",
@@ -300,20 +293,18 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
           };
           ws.send(JSON.stringify(res));
         } else {
-          // Handle other functions (like calendar check)
           try {
             const functionResult = await this.handleFunctionCall(funcCall.funcName, funcCall.arguments);
-            
-            // Fixed parsing with proper type checking
+
             let parsedResult: any;
             try {
               parsedResult = JSON.parse(functionResult);
             } catch {
               parsedResult = { error: "Invalid response format" };
             }
-            
+
             let responseContent = "";
-            
+
             if (parsedResult.available) {
               responseContent = `Great! ${parsedResult.message || 'That time slot is available.'}`;
               if (parsedResult.suggested_times && Array.isArray(parsedResult.suggested_times) && parsedResult.suggested_times.length > 0) {
@@ -325,7 +316,7 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
                 responseContent += ` How about: ${parsedResult.suggested_times.join(", ")}?`;
               }
             }
-            
+
             const res: CustomLlmResponse = {
               response_type: "response",
               response_id: request.response_id,
@@ -336,7 +327,6 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
             ws.send(JSON.stringify(res));
           } catch (error) {
             console.error("Error handling function call:", error);
-            // Send error response
             const res: CustomLlmResponse = {
               response_type: "response",
               response_id: request.response_id,
