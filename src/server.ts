@@ -88,18 +88,24 @@ export class Server {
         if (request.interaction_type === "call_details") {
           console.log("call_details payload:", JSON.stringify(request.call, null, 2));
 
-          /* a) use Retell’s contact lookup result if present */
+          /* a) use Retell's contact lookup result if present */
           let contactObj = request.call?.customer;
 
-          /* b) fallback – build minimal object from caller phone */
+          /* b) fallback – build minimal object from caller phone with comprehensive extraction */
           if (!contactObj) {
             const phone =
-              request.call?.customer?.phone   ??
-              request.call?.phoneNumber       ??
-              request.call?.from              ??
-              request.call?.to                ?? "";
+              request.call?.customer?.phone   ??     // contact-lookup result
+              request.call?.customer?.number  ??     // alt field
+              request.call?.caller?.phone     ??     // legacy field
+              request.call?.contact?.phone    ??     // some workspaces
+              request.call?.user_phone        ??     // NEW: native Retell variable
+              request.call?.phoneNumber       ??     // SIP / dial-in
+              request.call?.from              ??     // raw "from" header
+              request.call?.to                ??     // raw "to" header
+              "";
             contactObj = { phone };
             console.log("No contact from Retell; falling back to phone:", phone);
+            console.log("Available call data fields:", Object.keys(request.call || {}));
           }
 
           /* c) POST to your n8n webhook */
