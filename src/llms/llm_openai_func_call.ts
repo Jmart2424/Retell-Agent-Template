@@ -24,17 +24,33 @@ export class DemoLlmClient {
 ## Identity & Purpose
 You are Katie Scheduler, a virtual assistant representing PestAway Solutions, a professional pest control provider serving San Antonio, TX, and surrounding areas. Your purpose is to assist callers by answering service-related questions, confirming their needs, and helping them schedule an appointment or speak to a licensed technician. Your goal is to make the experience smooth, reassuring, and informative—especially for customers dealing with stressful pest situations.
 
-## Contact Personalization
-If you receive contact information (such as firstName, lastName, companyName, tags, service history, or other fields) from a tool result at the start of the conversation, **use it to personalize your greeting and responses**. For example:
-- Greet the caller by name if firstName or lastName is available.
-- Mention their company if companyName is present.
-- Reference their last service, tags, or custom fields if relevant.
-- If you do not receive any contact info, proceed with a generic friendly greeting.
+## How to Use Contact Data
+You may receive contact information from our CRM system containing details like:
+- firstName, lastName, companyName
+- address1, city, state, postalCode
+- phone, email
+- tags (customer categories)
+- customFields (serviceType, lastServiceDate, notes, etc.)
 
-Example personalized greeting:
-- "Hi Tony, welcome back to PestAway Solutions! How can I help you today?"
-- "Hi Tony Montana from Acme Pest Control, how can I assist you today?"
-- "Hi Tony, I see your last service was a Termite Inspection. How can I help you today?"
+When a caller asks about their information, USE the data you have on file to answer directly:
+- "What's my address?" → Quote the address1, city, state, postalCode from your data
+- "What was my last service?" → Reference customFields.serviceType and/or lastServiceDate
+- "Do you have my phone number?" → Confirm the phone number on file
+- "What company am I with?" → State their companyName if available
+
+Never guess or hallucinate information. If a specific field is missing, politely ask the caller to provide it.
+
+## Contact Personalization
+If you receive contact information at the start of the conversation, use it to personalize your greeting and responses:
+- Greet the caller by name if firstName or lastName is available
+- Mention their company if companyName is present
+- Reference their last service, tags, or custom fields if relevant
+- If you do not receive any contact info, proceed with a generic friendly greeting
+
+Example personalized greetings:
+- "Hi Robert, welcome back to PestAway Solutions! How can I help you today?"
+- "Hi Robert Awesome from Acme Pest Control, how can I assist you today?"
+- "Hi Robert, I see your last service was a Termite Inspection. How can I help you today?"
 
 ## Voice & Persona
 
@@ -179,6 +195,46 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
     }
   }
 
+  // Create a plain-text summary of contact information
+  private createContactSummary(contactJson: any): string {
+    let contact: any = {};
+    try {
+      contact = typeof contactJson === "string" ? JSON.parse(contactJson) : contactJson;
+    } catch {
+      return "";
+    }
+
+    if (!contact || Object.keys(contact).length === 0) return "";
+
+    const parts: string[] = [];
+    
+    // Name and company
+    const name = [contact.firstName, contact.lastName].filter(Boolean).join(" ");
+    if (name) parts.push(`Customer: ${name}`);
+    if (contact.companyName) parts.push(`Company: ${contact.companyName}`);
+    
+    // Contact info
+    if (contact.phone) parts.push(`Phone: ${contact.phone}`);
+    if (contact.email) parts.push(`Email: ${contact.email}`);
+    
+    // Address
+    const address = [contact.address1, contact.city, contact.state, contact.postalCode].filter(Boolean).join(", ");
+    if (address) parts.push(`Address: ${address}`);
+    
+    // Service history
+    if (contact.customFields?.serviceType) parts.push(`Last Service: ${contact.customFields.serviceType}`);
+    if (contact.customFields?.lastServiceDate) parts.push(`Last Service Date: ${contact.customFields.lastServiceDate}`);
+    if (contact.customFields?.notes) parts.push(`Notes: ${contact.customFields.notes}`);
+    
+    // Tags (filter out empty ones)
+    if (contact.tags && Array.isArray(contact.tags)) {
+      const validTags = contact.tags.filter((tag: any) => tag && tag.trim() && tag !== "[undefined]");
+      if (validTags.length > 0) parts.push(`Tags: ${validTags.join(", ")}`);
+    }
+
+    return parts.length > 0 ? `[Contact Information: ${parts.join(" | ")}]` : "";
+  }
+
   // Send first (personalized) greeting
   BeginMessage(ws: WebSocket, contactJson: any = {}) {
     // Parse JSON if it's a string
@@ -226,6 +282,7 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
   private PreparePrompt(
     request: ResponseRequiredRequest | ReminderRequiredRequest,
     funcResult?: FunctionCall,
+    contactSummary?: string
   ) {
     const transcript = this.ConversationToChatRequestMessages(request.transcript);
     const requestMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
@@ -234,6 +291,14 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
         content: this.systemPrompt,
       },
     ];
+
+    // Add contact summary as an assistant message if available
+    if (contactSummary && contactSummary.trim()) {
+      requestMessages.push({
+        role: "assistant",
+        content: contactSummary,
+      });
+    }
 
     for (const message of transcript) {
       requestMessages.push(message);
@@ -275,6 +340,7 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
     request: ResponseRequiredRequest | ReminderRequiredRequest,
     ws: WebSocket,
     funcResult?: FunctionCall,
+    contactSummary?: string
   ) {
     console.clear();
     console.log("req", request);
@@ -283,7 +349,7 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
       return;
     }
 
-    const requestMessages = this.PreparePrompt(request, funcResult);
+    const requestMessages = this.PreparePrompt(request, funcResult, contactSummary);
 
     let funcCall: FunctionCall | undefined;
     let funcArguments = "";
