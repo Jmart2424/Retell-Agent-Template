@@ -11,6 +11,7 @@ import {
 
 export class DemoLlmClient {
   private client: OpenAI;
+  private contactSummary = "";  // stores plain-text CRM data for later turns
 
   constructor() {
     this.client = new OpenAI({
@@ -33,12 +34,14 @@ You may receive contact information from our CRM system containing details like:
 - customFields (serviceType, lastServiceDate, notes, etc.)
 
 When a caller asks about their information, USE the data you have on file to answer directly:
-- "What's my address?" → Quote the address1, city, state, postalCode from your data
-- "What was my last service?" → Reference customFields.serviceType and/or lastServiceDate
-- "Do you have my phone number?" → Confirm the phone number on file
-- "What company am I with?" → State their companyName if available
+- "What's my address?" → Quote the EXACT address1, city, state, postalCode from your data
+- "What was my last service?" → Reference EXACT customFields.serviceType and/or lastServiceDate
+- "Do you have my phone number?" → Confirm the EXACT phone number on file
+- "What company am I with?" → State their EXACT companyName if available
+- "What email do you have?" → Quote the EXACT email address from your data
+- "What tags do I have?" → List the EXACT tags from your data
 
-Never guess or hallucinate information. If a specific field is missing, politely ask the caller to provide it.
+CRITICAL: Never guess, invent, or hallucinate information. If a specific field is missing, politely ask the caller to provide it. Always use the EXACT data provided - do not modify, approximate, or substitute similar information.
 
 ## Contact Personalization
 If you receive contact information at the start of the conversation, use it to personalize your greeting and responses:
@@ -237,6 +240,9 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
 
   // Send first (personalized) greeting
   BeginMessage(ws: WebSocket, contactJson: any = {}) {
+    // Store summary for future turns
+    this.contactSummary = this.createContactSummary(contactJson);
+
     // Parse JSON if it's a string
     let contact: any = {};
     try {
@@ -282,7 +288,6 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
   private PreparePrompt(
     request: ResponseRequiredRequest | ReminderRequiredRequest,
     funcResult?: FunctionCall,
-    contactSummary?: string
   ) {
     const transcript = this.ConversationToChatRequestMessages(request.transcript);
     const requestMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
@@ -293,10 +298,10 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
     ];
 
     // Add contact summary as an assistant message if available
-    if (contactSummary && contactSummary.trim()) {
+    if (this.contactSummary && this.contactSummary.trim()) {
       requestMessages.push({
         role: "assistant",
-        content: contactSummary,
+        content: this.contactSummary,
       });
     }
 
@@ -340,7 +345,6 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
     request: ResponseRequiredRequest | ReminderRequiredRequest,
     ws: WebSocket,
     funcResult?: FunctionCall,
-    contactSummary?: string
   ) {
     console.clear();
     console.log("req", request);
@@ -349,7 +353,7 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
       return;
     }
 
-    const requestMessages = this.PreparePrompt(request, funcResult, contactSummary);
+    const requestMessages = this.PreparePrompt(request, funcResult);
 
     let funcCall: FunctionCall | undefined;
     let funcArguments = "";
