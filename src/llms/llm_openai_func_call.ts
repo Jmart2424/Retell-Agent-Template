@@ -179,12 +179,33 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
     }
   }
 
-  BeginMessage(ws: WebSocket) {
-    const beginSentence = "Hi there! I'm Katie from PestAway Solutions. How can I help you today?";
+  // Send first (personalized) greeting
+  BeginMessage(ws: WebSocket, contactJson: any = {}) {
+    // Parse JSON if it's a string
+    let contact: any = {};
+    try {
+      contact = typeof contactJson === "string" ? JSON.parse(contactJson) : contactJson;
+    } catch {
+      contact = {};
+    }
+
+    // Build greeting
+    const first = (contact.firstName || "").trim();
+    const last = (contact.lastName || "").trim();
+    const company = (contact.companyName || "").trim();
+
+    let greeting = "Hi there! I'm Katie from PestAway Solutions.";
+    if (first || last) {
+      greeting = `Hi ${[first, last].filter(Boolean).join(" ")}, I'm Katie from PestAway Solutions.`;
+    } else if (company) {
+      greeting = `Hi there at ${company}, I'm Katie from PestAway Solutions.`;
+    }
+    greeting += " How can I help you today?";
+
     const res: CustomLlmResponse = {
       response_type: "response",
       response_id: 0,
-      content: beginSentence,
+      content: greeting,
       content_complete: true,
       end_call: false,
     };
