@@ -129,8 +129,8 @@ export class Server {
           };
           ws.send(JSON.stringify(toolMsg));
 
-          // e) greet the caller
-          llmClient.BeginMessage(ws);
+          // e) greet the caller WITH the contact data
+          llmClient.BeginMessage(ws, n8nResponseJson);
           return;
         }
 
