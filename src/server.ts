@@ -1,5 +1,3 @@
-/*  src/server.ts  –  full file  */
-
 import express, { Request, Response } from "express";
 import expressWs from "express-ws";
 import { RawData, WebSocket } from "ws";
@@ -16,7 +14,7 @@ const N8N_GHL_WEBHOOK =
 
 export class Server {
   private httpServer: HTTPServer;
-  public  app: expressWs.Application;
+  public app: expressWs.Application;
 
   constructor() {
     this.app = expressWs(express()).app;
@@ -26,7 +24,7 @@ export class Server {
     this.app.use(cors());
     this.app.use(express.urlencoded({ extended: true }));
 
-    /* health-check */
+    // Health check endpoint
     this.app.get("/", (_req, res) => res.send("OK"));
 
     this.handleRetellLlmWebSocket();
@@ -38,7 +36,7 @@ export class Server {
     console.log("Listening on", port);
   }
 
-  /* ----------  optional Retell event webhook  ---------- */
+  // Optional Retell event webhook
   private handleWebhook() {
     this.app.post("/webhook", (req: Request, res: Response) => {
       if (
@@ -56,26 +54,26 @@ export class Server {
     });
   }
 
-  /* ----------  main LLM websocket  ---------- */
+  // Main LLM websocket
   private handleRetellLlmWebSocket() {
     this.app.ws("/llm-websocket/:call_id", async (ws, req) => {
       const callId = req.params.call_id;
       console.log("LLM socket opened for", callId);
 
-      /* 1. send config */
+      // 1. Send config
       const cfg: CustomLlmResponse = {
         response_type: "config",
         config: { auto_reconnect: true, call_details: true }
       };
       ws.send(JSON.stringify(cfg));
 
-      /* 2. LLM helper */
+      // 2. LLM helper
       const llmClient = new DemoLlmClient();
 
       ws.on("error", e => console.error("ws error:", e));
       ws.on("close", () => console.log("ws closed for", callId));
 
-      /* 3. handle inbound messages */
+      // 3. Handle inbound messages
       ws.on("message", async (data: RawData, isBinary: boolean) => {
         if (isBinary) {
           ws.close(1007, "Binary frames not supported");
@@ -84,31 +82,32 @@ export class Server {
 
         const request: CustomLlmRequest = JSON.parse(data.toString());
 
-        /* ----------  call_details  ---------- */
+        // ----------  call_details  ----------
         if (request.interaction_type === "call_details") {
           console.log("call_details payload:", JSON.stringify(request.call, null, 2));
 
-          /* a) use Retell's contact lookup result if present */
+          // a) use Retell's contact lookup result if present
           let contactObj = request.call?.customer;
 
-          /* b) fallback – build minimal object from caller phone with comprehensive extraction */
+          // b) fallback – build minimal object from caller phone with comprehensive extraction
           if (!contactObj) {
             const phone =
-              request.call?.customer?.phone   ??     // contact-lookup result
-              request.call?.customer?.number  ??     // alt field
-              request.call?.caller?.phone     ??     // legacy field
-              request.call?.contact?.phone    ??     // some workspaces
-              request.call?.user_phone        ??     // NEW: native Retell variable
-              request.call?.phoneNumber       ??     // SIP / dial-in
-              request.call?.from              ??     // raw "from" header
-              request.call?.to                ??     // raw "to" header
+              request.call?.customer?.phone   ??
+              request.call?.customer?.number  ??
+              request.call?.caller?.phone     ??
+              request.call?.contact?.phone    ??
+              request.call?.user_phone        ?? // Retell's native variable
+              request.call?.from_number       ?? // NEW: websocket from_number variable
+              request.call?.phoneNumber       ??
+              request.call?.from              ??
+              request.call?.to                ??
               "";
             contactObj = { phone };
             console.log("No contact from Retell; falling back to phone:", phone);
             console.log("Available call data fields:", Object.keys(request.call || {}));
           }
 
-          /* c) POST to your n8n webhook */
+          // c) POST to your n8n webhook
           let n8nResponseJson = { success: false, message: "Lookup skipped" };
           try {
             const n8n = await fetch(N8N_GHL_WEBHOOK, {
@@ -122,7 +121,7 @@ export class Server {
             console.error("n8n webhook failed:", err);
           }
 
-          /* d) pass the (potentially enriched) contact data to LLM */
+          // d) pass the (potentially enriched) contact data to LLM
           const toolMsg: CustomLlmResponse = {
             response_type: "tool_call_result",
             tool_call_id: "ghl_lookup_init",
@@ -130,12 +129,12 @@ export class Server {
           };
           ws.send(JSON.stringify(toolMsg));
 
-          /* e) greet the caller */
+          // e) greet the caller
           llmClient.BeginMessage(ws);
           return;
         }
 
-        /* ----------  normal turns  ---------- */
+        // ----------  normal turns  ----------
         if (
           request.interaction_type === "response_required" ||
           request.interaction_type === "reminder_required"
@@ -144,7 +143,7 @@ export class Server {
           return;
         }
 
-        /* ----------  keep-alive  ---------- */
+        // ----------  keep-alive  ----------
         if (request.interaction_type === "ping_pong") {
           const pong: CustomLlmResponse = {
             response_type: "ping_pong",
