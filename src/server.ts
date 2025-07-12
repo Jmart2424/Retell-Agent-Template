@@ -151,6 +151,8 @@ export class Server {
           };
           ws.send(JSON.stringify(pong));
         }
+
+        // update_only messages need no action
       });
     });
   }
