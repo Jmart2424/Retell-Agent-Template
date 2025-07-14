@@ -12,7 +12,7 @@ import {
 export class DemoLlmClient {
   private client: OpenAI;
   private contactSummary = "";
-  private initialLookupCompleted = false; // Flag to track initial lookup
+  private initialLookupCompleted = false;
   
   // Enhanced custom field mapping with actual field names
   private customFieldMapping: { [key: string]: string } = {
@@ -51,8 +51,9 @@ export class DemoLlmClient {
       }
     }
     
-    // Fallback - you might have phone number in request metadata
-    return request.metadata?.phone || "";
+    // Fallback - check if request has phone in any other property
+    // Since metadata doesn't exist, we'll try to get phone from other sources
+    return (request as any).phone || "";
   }
 
   // GHL Lookup Function with specified webhook
@@ -68,7 +69,7 @@ export class DemoLlmClient {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(contactData),
-        timeout: 10000 // 10 second timeout
+        // Remove timeout as it may not be supported in node-fetch
       });
       
       if (response.ok) {
@@ -86,7 +87,7 @@ export class DemoLlmClient {
     }
   }
 
-  BeginMessage(prompt: string) {
+  BeginMessage(prompt: string): string {
     const systemPrompt = `
 ## Identity & Purpose
 
@@ -247,16 +248,17 @@ Contact Summary (if available): ${this.contactSummary}
         max_tokens: 1000,
       });
 
-      const response = completion.choices[0]?.message?.content || "";
+      const responseText = completion.choices[0]?.message?.content || "";
       
+      // Return with the correct property name based on your CustomLlmResponse interface
       return {
-        response,
+        content: responseText,
         turnComplete: true,
       };
     } catch (error) {
       console.error("Error in DraftResponse:", error);
       return {
-        response: "I apologize, but I'm having trouble processing your request right now. Let me connect you with one of our licensed bankers who can assist you further.",
+        content: "I apologize, but I'm having trouble processing your request right now. Let me connect you with one of our licensed bankers who can assist you further.",
         turnComplete: true,
       };
     }
@@ -288,7 +290,7 @@ Contact Summary (if available): ${this.contactSummary}
     ws: WebSocket
   ): Promise<CustomLlmResponse> {
     return {
-      response: "I'm still here to help you explore your home equity options. Would you like to continue where we left off?",
+      content: "I'm still here to help you explore your home equity options. Would you like to continue where we left off?",
       turnComplete: true,
     };
   }
