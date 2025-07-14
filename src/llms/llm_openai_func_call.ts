@@ -55,6 +55,15 @@ export class DemoLlmClient {
     return (request as any).phone || "";
   }
 
+  // Helper method to ensure response_id is a number
+  private ensureResponseIdIsNumber(responseId: string | number | undefined): number {
+    if (typeof responseId === 'string') {
+      const parsed = parseInt(responseId, 10);
+      return isNaN(parsed) ? 0 : parsed;
+    }
+    return responseId || 0;
+  }
+
   // GHL Lookup Function with specified webhook
   async ghl_lookup(contactData: any): Promise<any> {
     const webhookUrl = 'https://n8n-cloudhosted.onrender.com/webhook-test/894adbcb-6c82-4c25-b0e7-a1d973266aad';
@@ -247,16 +256,22 @@ Contact Summary (if available): ${this.contactSummary}
 
       const responseText = completion.choices[0]?.message?.content || "";
       
-      // Return with only the properties that exist in CustomLlmResponse
+      // Convert response_id to number type
+      const responseId = this.ensureResponseIdIsNumber(request.response_id);
+      
       return {
         content: responseText,
-        response_id: request.response_id || "",
+        response_id: responseId,
       };
     } catch (error) {
       console.error("Error in DraftResponse:", error);
+      
+      // Convert response_id to number type
+      const responseId = this.ensureResponseIdIsNumber(request.response_id);
+      
       return {
         content: "I apologize, but I'm having trouble processing your request right now. Let me connect you with one of our licensed bankers who can assist you further.",
-        response_id: request.response_id || "",
+        response_id: responseId,
       };
     }
   }
@@ -284,9 +299,12 @@ Contact Summary (if available): ${this.contactSummary}
   async DraftReminderResponse(
     request: ReminderRequiredRequest
   ): Promise<CustomLlmResponse> {
+    // Convert response_id to number type
+    const responseId = this.ensureResponseIdIsNumber(request.response_id);
+    
     return {
       content: "I'm still here to help you explore your home equity options. Would you like to continue where we left off?",
-      response_id: request.response_id || "",
+      response_id: responseId,
     };
   }
 }
