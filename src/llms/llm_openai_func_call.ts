@@ -11,300 +11,444 @@ import {
 
 export class DemoLlmClient {
   private client: OpenAI;
-  private contactSummary = "";
-  private initialLookupCompleted = false;
-  
-  // Enhanced custom field mapping with actual field names
-  private customFieldMapping: { [key: string]: string } = {
-    "SeLYuAVIdqR3xz31DgX5": "Home Value",
-    "K2oQYXcF7zmZgbNZJgaz": "Loan Amount", 
-    "11RRpfCU116d77Rzfb5H": "Loan Type",
-    "5KCQnRaGgliP0LdaeQg5": "Veteran",
-    "CwLeULca6xiOauN0BJ5Q": "Debt Amount",
-    "xcocCapAHPBgV9JBc5s4": "Bk or late payment",
-    "tGTdSy9ExfqQ3jSz67nl": "Additional Cash",
-    "A4anrspWxgyfoutQZLVv": "Credit Score",
-    "e7t1K6scrQ2a5T1aFcJV": "Reason for Cashout",
-    "Yt929EATMXlci8PU9vlv": "Call Summary"
-  };
+  private contactSummary = "";  // stores plain-text CRM data for later turns
 
   constructor() {
     this.client = new OpenAI({
-      apiKey: process.env.OPENAI_APIKEY,
+      apiKey: process.env.OPENAI_APIKEY, // Groq API key
       baseURL: "https://api.groq.com/openai/v1",
     });
   }
 
-  // Helper method to extract phone number from request
-  private extractPhoneNumber(request: ResponseRequiredRequest): string {
-    // Try to extract phone number from transcript
-    const transcript = request.transcript;
-    
-    // Look for phone number patterns in the transcript
-    for (const entry of transcript) {
-      if (entry.content) {
-        // Simple phone number regex - adjust as needed
-        const phoneMatch = entry.content.match(/(\+?1?[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})/);
-        if (phoneMatch) {
-          return phoneMatch[0];
-        }
-      }
-    }
-    
-    // Fallback - check if request has phone in any other property
-    return (request as any).phone || "";
-  }
-
-  // Helper method to ensure response_id is a number
-  private ensureResponseIdIsNumber(responseId: string | number | undefined): number {
-    if (typeof responseId === 'string') {
-      const parsed = parseInt(responseId, 10);
-      return isNaN(parsed) ? 0 : parsed;
-    }
-    return responseId || 0;
-  }
-
-  // GHL Lookup Function with specified webhook
-  async ghl_lookup(contactData: any): Promise<any> {
-    const webhookUrl = 'https://n8n-cloudhosted.onrender.com/webhook-test/894adbcb-6c82-4c25-b0e7-a1d973266aad';
-    
-    console.log("Calling GHL lookup with:", contactData);
-    
-    try {
-      const response = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(contactData)
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        this.contactSummary = JSON.stringify(data);
-        console.log("GHL lookup successful, contact summary updated");
-        return data;
-      } else {
-        console.error('GHL lookup failed:', response.status, response.statusText);
-        return null;
-      }
-    } catch (error) {
-      console.error('Error in GHL lookup:', error);
-      return null;
-    }
-  }
-
-  BeginMessage(prompt: string): string {
-    const systemPrompt = `
+  // Katie Scheduler system prompt
+  private systemPrompt = `
 ## Identity & Purpose
+You are Katie Scheduler, a virtual assistant representing PestAway Solutions, a professional pest control provider serving San Antonio, TX, and surrounding areas. Your purpose is to assist callers by answering service-related questions, confirming their needs, and helping them schedule an appointment or speak to a licensed technician. Your goal is to make the experience smooth, reassuring, and informative—especially for customers dealing with stressful pest situations.
 
-You are Katie Scheduler, a virtual assistant representing American Financial Network. Before starting the conversation, YOU MUST ALWAYS call the ghl_lookup function. Your purpose is to confirm prequalification criteria, and connect qualified individuals with licensed mortgage consultants for personalized solutions—especially those that may reduce debt and increase financial security using existing home equity.
-
-### Standard Fields:
-- id, dateAdded, type, locationId, phone, country, source
-- firstName, lastName, fullNameLowerCase, firstNameLowerCase, lastNameLowerCase, emailLowerCase
-- city, address1, state, postalCode, email
+## How to Use Contact Data
+You may receive contact information from our CRM system containing details like:
+- firstName, lastName, companyName
+- address1, city, state, postalCode
+- phone, email
 - tags (customer categories)
+- customFields (serviceType, lastServiceDate, notes, etc.)
 
-### Custom Fields Available:
-You have access to the following specific custom fields for each contact:
-- **Home Value**: The estimated value of the customer's home
-- **Loan Amount**: The amount of the loan being processed
-- **Loan Type**: The type of loan (e.g., VA, Conventional, FHA)
-- **Veteran**: Whether the customer is a veteran (Yes/No)
-- **Debt Amount**: Total debt amount for consolidation
-- **Bk or late payment**: Bankruptcy or late payment history
-- **Additional Cash**: Additional cash needed or available
-- **Credit Score**: Customer's credit score
-- **Reason for Cashout**: Why the customer needs cash out
-- **Call Summary**: Summary of previous calls and interactions
+When a caller asks about their information, USE the data you have on file to answer directly:
+- "What's my address?" → Quote the EXACT address1, city, state, postalCode from your data
+- "What was my last service?" → Reference EXACT customFields.serviceType and/or lastServiceDate
+- "Do you have my phone number?" → Confirm the EXACT phone number on file
+- "What company am I with?" → State their EXACT companyName if available
+- "What email do you have?" → Quote the EXACT email address from your data
+- "What tags do I have?" → List the EXACT tags from your data
+
+CRITICAL: Never guess, invent, or hallucinate information. If a specific field is missing, politely ask the caller to provide it. Always use the EXACT data provided - do not modify, approximate, or substitute similar information.
+
+## Contact Personalization
+If you receive contact information at the start of the conversation, use it to personalize your greeting and responses:
+- Greet the caller by name if firstName or lastName is available
+- Mention their company if companyName is present
+- Reference their last service, tags, or custom fields if relevant
+- If you do not receive any contact info, proceed with a generic friendly greeting
+
+Example personalized greetings:
+- "Hi Robert, welcome back to PestAway Solutions! How can I help you today?"
+- "Hi Robert Awesome from Acme Pest Control, how can I assist you today?"
+- "Hi Robert, I see your last service was a Termite Inspection. How can I help you today?"
 
 ## Voice & Persona
 
 ### Personality
-- Sound helpful, respectful, and confident, with a tone that fits the professionalism expected in financial services.
-- Show genuine interest in the homeowner's situation without being overly salesy.
-- Project friendly authority and trustworthiness—like a caring local expert who understands and wants to help.
-- Avoid pressure; be informative, warm, and supportive—like a neighbor offering advice.
+- Sound professional, friendly, calm, and knowledgeable—like a helpful receptionist who's been with the company for years.
+- Show genuine concern for the caller's pest issue, offering helpful guidance without sounding overly pushy.
+- Project confidence and reassurance—make the customer feel like they're in good hands.
+- Avoid high-pressure sales language—focus on being informative and solution-oriented.
 
 ### Speech Characteristics
-- Speak in a friendly-professional, happy tone. Think warm and inviting, not cartoonish.
+- Speak in a professional-friendly, happy tone. Think warm and inviting, not cartoonish.
 - Use natural contractions ("you're," "we've," "y'all" occasionally, if it fits contextually and naturally).
 - Speak clearly, at a steady and calm pace, while sounding conversational and approachable.
 - Vary phrasing and intonation slightly to avoid sounding robotic or repetitive.
-- Use plain, accessible language—especially when discussing loans, home values, or credit.
+- Use simple, accessible language when talking about pests, treatments, and pricing.
 - Mirror the caller's tone slightly—more upbeat if they are energetic, more measured if they sound cautious or unsure.
 - Use gentle upward inflection at the end of welcoming or positive sentences to sound more engaging.
 - Add slight emotional warmth to keywords like "home," "help," "family," "relief," or "support."
-- Avoid a monotone delivery; incorporate subtle vocal color—just enough to feel human, not dramatic.
 
 ## Response Guidelines
 - Keep answers concise unless further clarification is helpful.
 - Ask one question at a time to keep the flow natural.
-- Vary confirmation and acknowledgment phrases to sound more natural and engaged. Use a rotating selection of responses like: "Got it.", "Okay, perfect.", "Thank you for that.", "Okay, great.", "Thanks for letting me know.", "Sounds good.", "Got it.", "I appreciate that.", "Great, thanks."
+- Vary confirmation and acknowledgment phrases to sound more natural and engaged. Use a rotating selection of responses like: "Got it.", "Okay.", "Thank you for that.", "Okay, great.", "Thanks for letting me know.", "Sounds good.", "Got it.", "I appreciate that.", "Great, thanks."
   - Avoid repeating the same phrase back-to-back in a single conversation.
   - Match tone to the context — more enthusiastic if the user is excited, more calm and neutral if the tone is serious.
 - Avoid technical jargon unless the homeowner uses it first.
+- Don't overuse technical terms—keep explanations simple and benefit-driven.
+- Always offer a clear next step (e.g., schedule a visit, connect with a tech).
 
-## Scenario Handling
-- At the start of the call, trigger the ghl_lookup function
-
-- If They're Busy or Rushed: Say "I totally understand. This only takes a couple minutes and it is a no obligation, free analysis. Does that work?"
-
-- If They're Skeptical: Say "That makes sense. Just so you know, there's no commitment required—it's simply a benefit analysis to see if there's an option worth considering. Many homeowners use it to explore debt consolidation or lower rates."
-
-- If They Ask About our Company and/or what we do: Refer to AFN knowledge base
-
-- If They Say - I've already gone over this with someone: Say "Ah, yes, I can see a note here. I'll be brief, just double checking everything's accurate before we move forward."
-
-- If They Ask to Speak to a Human: Say "I am happy to get a licensed banker on the line for you, first I just need to double check your information. It will only take a minute." Then continue with the task flow.
-
-- If They Interrupt: Respond directly to their response, then quickly get back on track.
-
-- If They Say They are Renting, Not the Homeowner: Say "I do apologize, we thought you were the owner of the property. Have a wonderful day." Politely end the call.
-
-- If They Express Frustration or Irritation from our previous phone calls or emails: Say "I completely understand and can add you to our Do Not Call List. Would you like me to do that?"
-  - If They Say, Yes: Say "I will add you to our Do Not Call list right away". Then politely end the call.
-  - If They Say, No: Stay on track with the given conversational flow.
-
-- If they ask to be put on our Do Not Call list: Say "I will add you to our Do Not Call list right away". Then politely end the call.
-
-- If they ask to be called back at another time: Say "Not a problem, I can have our licensed banker call you back."
-  - If they don't give a time for a call back, ask: "When is a good time for you?"
-  1. Adjust the {{current_time}} to Pacific Time (America/Los_Angeles). Schedule only within the current calendar year and future dates.
-  2. Check availability using check_calendar_availability
-    - If time slot is not available, politely offer the next available time slot after.
-  3. Schedule using book_appointment_afn
-    - Pass {{first_name}} {{last_name}} as the name for appointment
-    - Pass {{email}} as the email for the appointment
-    - Pass {{phone}} as the location for the appointment
-  4. Trigger end_call function.
-
-## Function Tools Available
-
-You have access to the following function tools that you can call:
-
-### ghl_lookup
-- **Purpose**: Automatically lookup contact information from GoHighLevel
-- **Webhook**: https://n8n-cloudhosted.onrender.com/webhook-test/894adbcb-6c82-4c25-b0e7-a1d973266aad
-- **Usage**: MUST be called at the start of every conversation
-- **Parameters**: Takes contact data object and returns enriched contact information
-
-### check_calendar_availability
-- **Purpose**: Check available time slots for appointments
-- **Usage**: Use when scheduling callbacks or appointments
-- **Parameters**: Takes date/time parameters and returns availability
-
-### book_appointment_afn
-- **Purpose**: Schedule appointments with licensed bankers
-- **Usage**: Use after confirming availability and getting customer consent
-- **Parameters**: Requires name, email, phone, and appointment time
-
-### end_call
-- **Purpose**: Properly terminate the call
-- **Usage**: Use when conversation is complete or customer requests to end
-- **Parameters**: None required
-
-Remember: Always call ghl_lookup first, then proceed with your conversation flow based on the contact information retrieved.
-
-Contact Summary (if available): ${this.contactSummary}
+## Function Usage
+When a customer asks about availability or scheduling, use the check_calendar_tidycal function to check available time slots. Always be helpful and offer alternative times if the requested slot is not available.
 `;
 
-    return systemPrompt;
-  }
-
-  async DraftResponse(
-    request: ResponseRequiredRequest
-  ): Promise<CustomLlmResponse> {
-    console.log("Draft response request:", request);
-    
-    const transcript = request.transcript;
-    const userMessage = transcript[transcript.length - 1]?.content || "";
-    
-    // ALWAYS ensure ghl_lookup runs first before any response
-    if (!this.contactSummary) {
-      console.log("Running GHL lookup before response...");
-      
-      // Extract phone number from transcript or request
-      const phoneNumber = this.extractPhoneNumber(request);
-      
-      try {
-        await this.ghl_lookup({ phone: phoneNumber });
-        console.log("GHL lookup completed successfully");
-      } catch (error) {
-        console.error("GHL lookup failed:", error);
-        // Continue with basic response even if lookup fails
+  // Define available functions
+  private functions: OpenAI.Chat.Completions.ChatCompletionTool[] = [
+    {
+      type: "function",
+      function: {
+        name: "check_calendar_tidycal",
+        description: "Check calendar availability for pest control service appointments",
+        parameters: {
+          type: "object",
+          properties: {
+            requested_datetime: {
+              type: "string",
+              description: "Requested date and time in ISO format (YYYY-MM-DDTHH:MM:SS)"
+            },
+            service_type: {
+              type: "string",
+              description: "Type of pest control service requested"
+            }
+          },
+          required: ["requested_datetime"]
+        }
       }
+    },
+    {
+      type: "function",
+      function: {
+        name: "ghl_lookup",
+        description: "Lookup contact information in GoHighLevel CRM system",
+        parameters: {
+          type: "object",
+          properties: {
+            phone: {
+              type: "string",
+              description: "Phone number to lookup in GoHighLevel"
+            },
+            email: {
+              type: "string",
+              description: "Email address to lookup (optional)"
+            }
+          },
+          required: ["phone"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "end_call",
+        description: "End the call gracefully",
+        parameters: {
+          type: "object",
+          properties: {
+            reason: {
+              type: "string",
+              description: "Reason for ending the call"
+            }
+          },
+          required: ["reason"]
+        }
+      }
+    }
+  ];
+
+  // Function to handle N8N webhook calls
+  private async handleFunctionCall(functionName: string, parameters: any): Promise<string> {
+    const webhookEndpoints: { [key: string]: string | null } = {
+      'check_calendar_tidycal': 'https://n8n-cloudhosted.onrender.com/webhook-test/c01d3726-2d0d-4f83-8adf-3b32f5354d2f',
+      'ghl_lookup': 'https://n8n-cloudhosted.onrender.com/webhook-test/894adbcb-6c82-4c25-b0e7-a1d973266aad',
+      'end_call': null
+    };
+
+    if (functionName === 'end_call') {
+      return JSON.stringify({ 
+        success: true, 
+        message: parameters.reason || "Thank you for calling PestAway Solutions! Have a great day!" 
+      });
+    }
+
+    const webhookUrl = webhookEndpoints[functionName as keyof typeof webhookEndpoints];
+    if (!webhookUrl) {
+      return JSON.stringify({ error: `Unknown function: ${functionName}` });
     }
 
     try {
-      const completion = await this.client.chat.completions.create({
-        model: "llama3-8b-8192",
-        messages: [
-          {
-            role: "system",
-            content: this.BeginMessage(""),
-          },
-          {
-            role: "user",
-            content: userMessage,
-          },
-        ],
-        temperature: 0.7,
-        max_tokens: 1000,
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          function_name: functionName,
+          parameters: parameters,
+          timestamp: new Date().toISOString()
+        })
       });
 
-      const responseText = completion.choices[0]?.message?.content || "";
-      
-      // Convert response_id to number type
-      const responseId = this.ensureResponseIdIsNumber(request.response_id);
-      
-      return {
-        content: responseText,
-        response_id: responseId,
-      };
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      return JSON.stringify(result);
     } catch (error) {
-      console.error("Error in DraftResponse:", error);
-      
-      // Convert response_id to number type
-      const responseId = this.ensureResponseIdIsNumber(request.response_id);
-      
-      return {
-        content: "I apologize, but I'm having trouble processing your request right now. Let me connect you with one of our licensed bankers who can assist you further.",
-        response_id: responseId,
-      };
+      console.error(`Error calling function ${functionName}:`, error);
+      return JSON.stringify({ 
+        error: `Failed to execute ${functionName}`,
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   }
 
-  async DraftResponseWithInterjection(
-    request: ResponseRequiredRequest
-  ): Promise<CustomLlmResponse> {
-    // Ensure GHL lookup runs for interjections too
-    if (!this.contactSummary) {
-      console.log("Running GHL lookup for interjection...");
-      
-      const phoneNumber = this.extractPhoneNumber(request);
-      
-      try {
-        await this.ghl_lookup({ phone: phoneNumber });
-      } catch (error) {
-        console.error("GHL lookup failed in interjection:", error);
+  // Create a plain-text summary of contact information
+  private createContactSummary(contactJson: any): string {
+    let contact: any = {};
+    try {
+      contact = typeof contactJson === "string" ? JSON.parse(contactJson) : contactJson;
+    } catch {
+      return "";
+    }
+
+    if (!contact || Object.keys(contact).length === 0) return "";
+
+    const parts: string[] = [];
+    
+    // Name and company
+    const name = [contact.firstName, contact.lastName].filter(Boolean).join(" ");
+    if (name) parts.push(`Customer: ${name}`);
+    if (contact.companyName) parts.push(`Company: ${contact.companyName}`);
+    
+    // Contact info
+    if (contact.phone) parts.push(`Phone: ${contact.phone}`);
+    if (contact.email) parts.push(`Email: ${contact.email}`);
+    
+    // Address
+    const address = [contact.address1, contact.city, contact.state, contact.postalCode].filter(Boolean).join(", ");
+    if (address) parts.push(`Address: ${address}`);
+    
+    // Service history
+    if (contact.customFields?.serviceType) parts.push(`Last Service: ${contact.customFields.serviceType}`);
+    if (contact.customFields?.lastServiceDate) parts.push(`Last Service Date: ${contact.customFields.lastServiceDate}`);
+    if (contact.customFields?.notes) parts.push(`Notes: ${contact.customFields.notes}`);
+    
+    // Tags (filter out empty ones)
+    if (contact.tags && Array.isArray(contact.tags)) {
+      const validTags = contact.tags.filter((tag: any) => tag && tag.trim() && tag !== "[undefined]");
+      if (validTags.length > 0) parts.push(`Tags: ${validTags.join(", ")}`);
+    }
+
+    return parts.length > 0 ? `[Contact Information: ${parts.join(" | ")}]` : "";
+  }
+
+  // Send first (personalized) greeting
+  BeginMessage(ws: WebSocket, contactJson: any = {}) {
+    // Store summary for future turns
+    this.contactSummary = this.createContactSummary(contactJson);
+
+    // Parse JSON if it's a string
+    let contact: any = {};
+    try {
+      contact = typeof contactJson === "string" ? JSON.parse(contactJson) : contactJson;
+    } catch {
+      contact = {};
+    }
+
+    // Build greeting
+    const first = (contact.firstName || "").trim();
+    const last = (contact.lastName || "").trim();
+    const company = (contact.companyName || "").trim();
+
+    let greeting = "Hi there! I'm Katie from PestAway Solutions.";
+    if (first || last) {
+      greeting = `Hi ${[first, last].filter(Boolean).join(" ")}, I'm Katie from PestAway Solutions.`;
+    } else if (company) {
+      greeting = `Hi there at ${company}, I'm Katie from PestAway Solutions.`;
+    }
+    greeting += " How can I help you today?";
+
+    const res: CustomLlmResponse = {
+      response_type: "response",
+      response_id: 0,
+      content: greeting,
+      content_complete: true,
+      end_call: false,
+    };
+    ws.send(JSON.stringify(res));
+  }
+
+  private ConversationToChatRequestMessages(conversation: Utterance[]) {
+    const result: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
+    for (const turn of conversation) {
+      result.push({
+        role: turn.role === "agent" ? "assistant" : "user",
+        content: turn.content,
+      });
+    }
+    return result;
+  }
+
+  private PreparePrompt(
+    request: ResponseRequiredRequest | ReminderRequiredRequest,
+    funcResult?: FunctionCall,
+  ) {
+    const transcript = this.ConversationToChatRequestMessages(request.transcript);
+    const requestMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+      {
+        role: "system",
+        content: this.systemPrompt,
+      },
+    ];
+
+    // Add contact summary as an assistant message if available
+    if (this.contactSummary && this.contactSummary.trim()) {
+      requestMessages.push({
+        role: "assistant",
+        content: this.contactSummary,
+      });
+    }
+
+    for (const message of transcript) {
+      requestMessages.push(message);
+    }
+
+    if (funcResult) {
+      requestMessages.push({
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: funcResult.id,
+            type: "function",
+            function: {
+              name: funcResult.funcName,
+              arguments: JSON.stringify(funcResult.arguments),
+            },
+          },
+        ],
+      });
+      requestMessages.push({
+        role: "tool",
+        tool_call_id: funcResult.id,
+        content: funcResult.result || "",
+      });
+    }
+
+    if (request.interaction_type === "reminder_required") {
+      requestMessages.push({
+        role: "user",
+        content: "(Now the user has not responded in a while, you would say:)",
+      });
+    }
+
+    return requestMessages;
+  }
+
+  async DraftResponse(
+    request: ResponseRequiredRequest | ReminderRequiredRequest,
+    ws: WebSocket,
+    funcResult?: FunctionCall,
+  ) {
+    console.clear();
+    console.log("req", request);
+
+    if (request.interaction_type !== "response_required" && request.interaction_type !== "reminder_required") {
+      return;
+    }
+
+    const requestMessages = this.PreparePrompt(request, funcResult);
+
+    let funcCall: FunctionCall | undefined;
+    let funcArguments = "";
+    let toolCallHandled = false;
+
+    try {
+      const events = await this.client.chat.completions.create({
+        model: "llama3-70b-8192",
+        messages: requestMessages,
+        stream: true,
+        temperature: 0.1,
+        max_tokens: 200,
+        frequency_penalty: 1.0,
+        presence_penalty: 1.0,
+        tools: this.functions,
+      });
+
+      for await (const event of events as any) {
+        if (event.choices.length >= 1) {
+          const delta = event.choices[0].delta;
+          if (!delta) continue;
+
+          // Handle tool/function call
+          if (delta.tool_calls && delta.tool_calls.length > 0 && !toolCallHandled) {
+            const toolCall = delta.tool_calls[0];
+            if (toolCall.id && toolCall.function?.name) {
+              funcArguments += toolCall.function.arguments || "";
+              funcCall = {
+                id: toolCall.id,
+                funcName: toolCall.function.name,
+                arguments: {},
+              };
+              continue;
+            }
+          } else if (funcCall && funcArguments && !toolCallHandled) {
+            funcCall.arguments = JSON.parse(funcArguments);
+            const functionResult = await this.handleFunctionCall(funcCall.funcName, funcCall.arguments);
+
+            let parsedResult: any;
+            try {
+              parsedResult = JSON.parse(functionResult);
+            } catch {
+              parsedResult = { error: "Invalid response format" };
+            }
+
+            let responseContent = "";
+            if (parsedResult.available) {
+              responseContent = `Great! ${parsedResult.message || 'That time slot is available.'}`;
+              if (parsedResult.suggested_times && Array.isArray(parsedResult.suggested_times) && parsedResult.suggested_times.length > 0) {
+                responseContent += ` I also have these alternative times available: ${parsedResult.suggested_times.join(", ")}.`;
+              }
+            } else if (parsedResult.success && funcCall.funcName === "ghl_lookup") {
+              responseContent = parsedResult.message || "Contact information found.";
+            } else {
+              responseContent = `I'm sorry, that time slot isn't available. Let me suggest some alternatives.`;
+              if (parsedResult.suggested_times && Array.isArray(parsedResult.suggested_times) && parsedResult.suggested_times.length > 0) {
+                responseContent += ` How about: ${parsedResult.suggested_times.join(", ")}?`;
+              }
+            }
+
+            const res: CustomLlmResponse = {
+              response_type: "response",
+              response_id: request.response_id,
+              content: responseContent,
+              content_complete: true,
+              end_call: false,
+            };
+            ws.send(JSON.stringify(res));
+            toolCallHandled = true;
+            break;
+          } else if (delta.content && !toolCallHandled) {
+            const res: CustomLlmResponse = {
+              response_type: "response",
+              response_id: request.response_id,
+              content: delta.content,
+              content_complete: false,
+              end_call: false,
+            };
+            ws.send(JSON.stringify(res));
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Error in gpt stream: ", err);
+    } finally {
+      if (funcCall && funcCall.funcName === "end_call") {
+        const res: CustomLlmResponse = {
+          response_type: "response",
+          response_id: request.response_id,
+          content: "Thank you for calling PestAway Solutions!",
+          content_complete: true,
+          end_call: true,
+        };
+        ws.send(JSON.stringify(res));
       }
     }
-    
-    // Handle interjections with same logic as main response
-    return this.DraftResponse(request);
-  }
-
-  async DraftReminderResponse(
-    request: ReminderRequiredRequest
-  ): Promise<CustomLlmResponse> {
-    // Convert response_id to number type
-    const responseId = this.ensureResponseIdIsNumber(request.response_id);
-    
-    return {
-      content: "I'm still here to help you explore your home equity options. Would you like to continue where we left off?",
-      response_id: responseId,
-    };
   }
 }
