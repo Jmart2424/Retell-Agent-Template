@@ -52,7 +52,6 @@ export class DemoLlmClient {
     }
     
     // Fallback - check if request has phone in any other property
-    // Since metadata doesn't exist, we'll try to get phone from other sources
     return (request as any).phone || "";
   }
 
@@ -68,8 +67,7 @@ export class DemoLlmClient {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(contactData),
-        // Remove timeout as it may not be supported in node-fetch
+        body: JSON.stringify(contactData)
       });
       
       if (response.ok) {
@@ -207,8 +205,7 @@ Contact Summary (if available): ${this.contactSummary}
   }
 
   async DraftResponse(
-    request: ResponseRequiredRequest,
-    ws: WebSocket
+    request: ResponseRequiredRequest
   ): Promise<CustomLlmResponse> {
     console.log("Draft response request:", request);
     
@@ -250,23 +247,22 @@ Contact Summary (if available): ${this.contactSummary}
 
       const responseText = completion.choices[0]?.message?.content || "";
       
-      // Return with the correct property name based on your CustomLlmResponse interface
+      // Return with only the properties that exist in CustomLlmResponse
       return {
         content: responseText,
-        turnComplete: true,
+        response_id: request.response_id || "",
       };
     } catch (error) {
       console.error("Error in DraftResponse:", error);
       return {
         content: "I apologize, but I'm having trouble processing your request right now. Let me connect you with one of our licensed bankers who can assist you further.",
-        turnComplete: true,
+        response_id: request.response_id || "",
       };
     }
   }
 
   async DraftResponseWithInterjection(
-    request: ResponseRequiredRequest,
-    ws: WebSocket
+    request: ResponseRequiredRequest
   ): Promise<CustomLlmResponse> {
     // Ensure GHL lookup runs for interjections too
     if (!this.contactSummary) {
@@ -282,16 +278,15 @@ Contact Summary (if available): ${this.contactSummary}
     }
     
     // Handle interjections with same logic as main response
-    return this.DraftResponse(request, ws);
+    return this.DraftResponse(request);
   }
 
   async DraftReminderResponse(
-    request: ReminderRequiredRequest,
-    ws: WebSocket
+    request: ReminderRequiredRequest
   ): Promise<CustomLlmResponse> {
     return {
       content: "I'm still here to help you explore your home equity options. Would you like to continue where we left off?",
-      turnComplete: true,
+      response_id: request.response_id || "",
     };
   }
 }
