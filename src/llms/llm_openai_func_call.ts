@@ -310,40 +310,26 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
     return validTags.length > 0 ? `Tags: ${validTags.join(", ")}` : "";
   }
 
-  // Enhanced BeginMessage with comprehensive data support
+  // Enhanced BeginMessage with custom greeting
   BeginMessage(ws: WebSocket, contactJson: any = {}) {
-    this.contactSummary = this.createEnhancedContactSummary(contactJson);
-
+    // Parse the contact JSON returned by your webhook:
     let contact: any = {};
     try {
-      contact = typeof contactJson === "string" ? JSON.parse(contactJson) : contactJson;
+      // if your n8n response wraps the data, adjust accordingly:
+      contact = contactJson.contact ?? contactJson.data ?? contactJson;
     } catch {
       contact = {};
     }
 
-    // Enhanced greeting with custom field awareness
-    const first = (contact.firstName || "").trim();
-    const last = (contact.lastName || "").trim();
+    // Extract first name (or fallback):
+    const firstName = contact.firstName || contact.first_name || "";
 
-    let greeting = "Hi there! I'm Katie from PestAway Solutions.";
-    if (first || last) {
-      greeting = `Hi ${[first, last].filter(Boolean).join(" ")}, I'm Katie from PestAway Solutions.`;
-    }
+    // Build your exact greeting:
+    const greeting = firstName
+      ? `Hi, this is Katie with PestAway Solutions. It looks like we have you in our system. Am I speaking with ${firstName}?`
+      : `Hi, this is Katie with PestAway Solutions. May I ask who I’m speaking with today?`;
 
-    // Check for special custom field values to personalize greeting
-    if (contact.customField) {
-      const loanType = this.findCustomFieldByName(contact.customField, "Loan Type");
-      const veteran = this.findCustomFieldByName(contact.customField, "Veteran");
-      
-      if (loanType) {
-        greeting += ` I see you're working on a ${loanType} loan.`;
-      } else if (veteran === "Yes") {
-        greeting += ` I see you're a veteran - thank you for your service!`;
-      }
-    }
-
-    greeting += " How can I help you today?";
-
+    // Send the greeting over the WebSocket:
     const res: CustomLlmResponse = {
       response_type: "response",
       response_id: 0,
@@ -387,7 +373,7 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
     return result;
   }
 
-  // [Previous methods remain the same: ConversationToChatRequestMessages, PreparePrompt, DraftResponse]
+  // ConversationToChatRequestMessages, PreparePrompt, and DraftResponse remain unchanged
   private ConversationToChatRequestMessages(conversation: Utterance[]) {
     const result: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
     for (const turn of conversation) {
