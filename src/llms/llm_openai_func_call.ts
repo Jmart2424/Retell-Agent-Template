@@ -11,52 +11,84 @@ import {
 
 export class DemoLlmClient {
   private client: OpenAI;
-  private contactSummary = "";  // stores plain-text CRM data for later turns
+  private contactSummary = "";
+  
+  // Enhanced custom field mapping with actual field names
+  private customFieldMapping: { [key: string]: string } = {
+    "SeLYuAVIdqR3xz31DgX5": "Home Value",
+    "K2oQYXcF7zmZgbNZJgaz": "Loan Amount", 
+    "11RRpfCU116d77Rzfb5H": "Loan Type",
+    "5KCQnRaGgliP0LdaeQg5": "Veteran",
+    "CwLeULca6xiOauN0BJ5Q": "Debt Amount",
+    "xcocCapAHPBgV9JBc5s4": "Bk or late payment",
+    "tGTdSy9ExfqQ3jSz67nl": "Additional Cash",
+    "A4anrspWxgyfoutQZLVv": "Credit Score",
+    "e7t1K6scrQ2a5T1aFcJV": "Reason for Cashout",
+    "Yt929EATMXlci8PU9vlv": "Call Summary"
+  };
 
   constructor() {
     this.client = new OpenAI({
-      apiKey: process.env.OPENAI_APIKEY, // Groq API key
+      apiKey: process.env.OPENAI_APIKEY,
       baseURL: "https://api.groq.com/openai/v1",
     });
   }
 
-  // Katie Scheduler system prompt
+  // Enhanced system prompt with specific custom field information
   private systemPrompt = `
 ## Identity & Purpose
-You are Katie Scheduler, a virtual assistant representing PestAway Solutions, a professional pest control provider serving San Antonio, TX, and surrounding areas. Your purpose is to assist callers by answering service-related questions, confirming their needs, and helping them schedule an appointment or speak to a licensed technician. Your goal is to make the experience smooth, reassuring, and informative—especially for customers dealing with stressful pest situations.
+You are Katie Scheduler, a virtual assistant representing PestAway Solutions, a professional pest control provider serving San Antonio, TX, and surrounding areas. Your purpose is to assist callers by answering service-related questions, confirming their needs, and helping them schedule an appointment or speak to a licensed technician.
 
 ## How to Use Contact Data
-You may receive contact information from our CRM system containing details like:
-- firstName, lastName, companyName
-- address1, city, state, postalCode
-- phone, email
+You have access to comprehensive contact information from our CRM system containing:
+
+### Standard Fields:
+- id, dateAdded, type, locationId, phone, country, source
+- firstName, lastName, fullNameLowerCase, firstNameLowerCase, lastNameLowerCase, emailLowerCase
+- city, address1, state, postalCode, email
 - tags (customer categories)
-- customFields (serviceType, lastServiceDate, notes, etc.)
 
-When a caller asks about their information, USE the data you have on file to answer directly:
-- "What's my address?" → Quote the EXACT address1, city, state, postalCode from your data
-- "What was my last service?" → Reference EXACT customFields.serviceType and/or lastServiceDate
-- "Do you have my phone number?" → Confirm the EXACT phone number on file
-- "What company am I with?" → State their EXACT companyName if available
-- "What email do you have?" → Quote the EXACT email address from your data
-- "What tags do I have?" → List the EXACT tags from your data
+### Custom Fields Available:
+You have access to the following specific custom fields for each contact:
+- **Home Value**: The estimated value of the customer's home
+- **Loan Amount**: The amount of the loan being processed
+- **Loan Type**: The type of loan (e.g., VA, Conventional, FHA)
+- **Veteran**: Whether the customer is a veteran (Yes/No)
+- **Debt Amount**: Total debt amount for consolidation
+- **Bk or late payment**: Bankruptcy or late payment history
+- **Additional Cash**: Additional cash needed or available
+- **Credit Score**: Customer's credit score
+- **Reason for Cashout**: Why the customer needs cash out
+- **Call Summary**: Summary of previous calls and interactions
 
-CRITICAL: Never guess, invent, or hallucinate information. If a specific field is missing, politely ask the caller to provide it. Always use the EXACT data provided - do not modify, approximate, or substitute similar information.
+## Responding to Customer Inquiries
+When a caller asks about their information, USE the exact data you have on file:
+
+**Standard Field Examples:**
+- "What's my address?" → Quote the EXACT address1, city, state, postalCode
+- "What's my phone number?" → Confirm the EXACT phone number
+- "What email do you have?" → Quote the EXACT email address
+
+**Custom Field Examples:**
+- "What's my home value?" → Reference the exact Home Value field
+- "What's my loan amount?" → Reference the exact Loan Amount field
+- "What type of loan do I have?" → Reference the exact Loan Type field
+- "Am I a veteran?" → Reference the exact Veteran field
+- "What's my debt amount?" → Reference the exact Debt Amount field
+- "What's my credit score?" → Reference the exact Credit Score field
+- "Why did I call before?" → Reference the exact Call Summary field
+- "What was my reason for cash out?" → Reference the exact Reason for Cashout field
+
+CRITICAL: Never guess, invent, or hallucinate information. If a specific field is missing or empty, politely ask the caller to provide it. Always use the EXACT data provided - do not modify, approximate, or substitute similar information.
 
 ## Contact Personalization
 If you receive contact information at the start of the conversation, use it to personalize your greeting and responses:
 - Greet the caller by name if firstName or lastName is available
-- Mention their company if companyName is present
-- Reference their last service, tags, or custom fields if relevant
+- Reference relevant custom fields if appropriate (e.g., "I see you're looking into a VA loan")
+- Mention previous call summaries if available
 - If you do not receive any contact info, proceed with a generic friendly greeting
 
-Example personalized greetings:
-- "Hi Robert, welcome back to PestAway Solutions! How can I help you today?"
-- "Hi Robert Awesome from Acme Pest Control, how can I assist you today?"
-- "Hi Robert, I see your last service was a Termite Inspection. How can I help you today?"
-
 ## Voice & Persona
-
 ### Personality
 - Sound professional, friendly, calm, and knowledgeable—like a helpful receptionist who's been with the company for years.
 - Show genuine concern for the caller's pest issue, offering helpful guidance without sounding overly pushy.
@@ -70,24 +102,19 @@ Example personalized greetings:
 - Vary phrasing and intonation slightly to avoid sounding robotic or repetitive.
 - Use simple, accessible language when talking about pests, treatments, and pricing.
 - Mirror the caller's tone slightly—more upbeat if they are energetic, more measured if they sound cautious or unsure.
-- Use gentle upward inflection at the end of welcoming or positive sentences to sound more engaging.
-- Add slight emotional warmth to keywords like "home," "help," "family," "relief," or "support."
 
 ## Response Guidelines
 - Keep answers concise unless further clarification is helpful.
 - Ask one question at a time to keep the flow natural.
-- Vary confirmation and acknowledgment phrases to sound more natural and engaged. Use a rotating selection of responses like: "Got it.", "Okay.", "Thank you for that.", "Okay, great.", "Thanks for letting me know.", "Sounds good.", "Got it.", "I appreciate that.", "Great, thanks."
-  - Avoid repeating the same phrase back-to-back in a single conversation.
-  - Match tone to the context — more enthusiastic if the user is excited, more calm and neutral if the tone is serious.
+- Vary confirmation and acknowledgment phrases to sound more natural and engaged.
 - Avoid technical jargon unless the homeowner uses it first.
-- Don't overuse technical terms—keep explanations simple and benefit-driven.
 - Always offer a clear next step (e.g., schedule a visit, connect with a tech).
 
 ## Function Usage
 When a customer asks about availability or scheduling, use the check_calendar_tidycal function to check available time slots. Always be helpful and offer alternative times if the requested slot is not available.
 `;
 
-  // Define available functions
+  // Define available functions (unchanged)
   private functions: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     {
       type: "function",
@@ -150,7 +177,7 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
     }
   ];
 
-  // Function to handle N8N webhook calls
+  // Enhanced function to handle comprehensive custom fields lookup
   private async handleFunctionCall(functionName: string, parameters: any): Promise<string> {
     const webhookEndpoints: { [key: string]: string | null } = {
       'check_calendar_tidycal': 'https://n8n-cloudhosted.onrender.com/webhook-test/c01d3726-2d0d-4f83-8adf-3b32f5354d2f',
@@ -188,6 +215,13 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
       }
 
       const result = await response.json();
+      
+      // Enhanced handling for GHL lookup results
+      if (functionName === 'ghl_lookup' && result.contact) {
+        // Store the complete contact data for later use
+        this.contactSummary = this.createEnhancedContactSummary(result.contact);
+      }
+      
       return JSON.stringify(result);
     } catch (error) {
       console.error(`Error calling function ${functionName}:`, error);
@@ -198,52 +232,88 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
     }
   }
 
-  // Create a plain-text summary of contact information
-  private createContactSummary(contactJson: any): string {
-    let contact: any = {};
-    try {
-      contact = typeof contactJson === "string" ? JSON.parse(contactJson) : contactJson;
-    } catch {
-      return "";
-    }
+  // Enhanced method to create comprehensive contact summary with exact field names
+  private createEnhancedContactSummary(contactData: any): string {
+    if (!contactData || Object.keys(contactData).length === 0) return "";
 
-    if (!contact || Object.keys(contact).length === 0) return "";
+    const sections: string[] = [];
+    
+    // Standard contact information
+    const standardFields = this.processStandardFields(contactData);
+    if (standardFields) sections.push(standardFields);
+    
+    // Custom fields information with exact names
+    const customFields = this.processCustomFieldsWithMapping(contactData);
+    if (customFields) sections.push(customFields);
+    
+    // Tags information
+    const tags = this.processTags(contactData);
+    if (tags) sections.push(tags);
 
+    return sections.length > 0 ? `[Contact Information: ${sections.join(" | ")}]` : "";
+  }
+
+  // Process standard fields from contact data
+  private processStandardFields(contact: any): string {
     const parts: string[] = [];
     
-    // Name and company
+    // Personal information
     const name = [contact.firstName, contact.lastName].filter(Boolean).join(" ");
     if (name) parts.push(`Customer: ${name}`);
-    if (contact.companyName) parts.push(`Company: ${contact.companyName}`);
-    
-    // Contact info
-    if (contact.phone) parts.push(`Phone: ${contact.phone}`);
     if (contact.email) parts.push(`Email: ${contact.email}`);
+    if (contact.phone) parts.push(`Phone: ${contact.phone}`);
     
-    // Address
+    // Address information
     const address = [contact.address1, contact.city, contact.state, contact.postalCode].filter(Boolean).join(", ");
     if (address) parts.push(`Address: ${address}`);
     
-    // Service history
-    if (contact.customFields?.serviceType) parts.push(`Last Service: ${contact.customFields.serviceType}`);
-    if (contact.customFields?.lastServiceDate) parts.push(`Last Service Date: ${contact.customFields.lastServiceDate}`);
-    if (contact.customFields?.notes) parts.push(`Notes: ${contact.customFields.notes}`);
+    // System information
+    if (contact.id) parts.push(`Contact ID: ${contact.id}`);
+    if (contact.dateAdded) parts.push(`Date Added: ${contact.dateAdded}`);
+    if (contact.type) parts.push(`Type: ${contact.type}`);
+    if (contact.source) parts.push(`Source: ${contact.source}`);
+    if (contact.country) parts.push(`Country: ${contact.country}`);
     
-    // Tags (filter out empty ones)
-    if (contact.tags && Array.isArray(contact.tags)) {
-      const validTags = contact.tags.filter((tag: any) => tag && tag.trim() && tag !== "[undefined]");
-      if (validTags.length > 0) parts.push(`Tags: ${validTags.join(", ")}`);
-    }
-
-    return parts.length > 0 ? `[Contact Information: ${parts.join(" | ")}]` : "";
+    return parts.join(" | ");
   }
 
-  // Send first (personalized) greeting
-  BeginMessage(ws: WebSocket, contactJson: any = {}) {
-    // Store summary for future turns
-    this.contactSummary = this.createContactSummary(contactJson);
+  // Process custom fields using exact field mapping
+  private processCustomFieldsWithMapping(contact: any): string {
+    if (!contact.customField || !Array.isArray(contact.customField)) return "";
+    
+    const customFieldParts: string[] = [];
+    
+    contact.customField.forEach((field: any) => {
+      if (field.id && field.value) {
+        // Use exact field name from mapping
+        const fieldName = this.customFieldMapping[field.id];
+        if (fieldName) {
+          customFieldParts.push(`${fieldName}: ${field.value}`);
+        } else {
+          // Fallback for unknown field IDs
+          customFieldParts.push(`Custom Field ${field.id}: ${field.value}`);
+        }
+      }
+    });
+    
+    return customFieldParts.length > 0 ? `Custom Fields: ${customFieldParts.join(", ")}` : "";
+  }
 
-    // Parse JSON if it's a string
+  // Process tags from contact data
+  private processTags(contact: any): string {
+    if (!contact.tags || !Array.isArray(contact.tags)) return "";
+    
+    const validTags = contact.tags.filter((tag: any) => 
+      tag && typeof tag === 'string' && tag.trim() && tag !== "[undefined]"
+    );
+    
+    return validTags.length > 0 ? `Tags: ${validTags.join(", ")}` : "";
+  }
+
+  // Enhanced BeginMessage with comprehensive data support
+  BeginMessage(ws: WebSocket, contactJson: any = {}) {
+    this.contactSummary = this.createEnhancedContactSummary(contactJson);
+
     let contact: any = {};
     try {
       contact = typeof contactJson === "string" ? JSON.parse(contactJson) : contactJson;
@@ -251,17 +321,27 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
       contact = {};
     }
 
-    // Build greeting
+    // Enhanced greeting with custom field awareness
     const first = (contact.firstName || "").trim();
     const last = (contact.lastName || "").trim();
-    const company = (contact.companyName || "").trim();
 
     let greeting = "Hi there! I'm Katie from PestAway Solutions.";
     if (first || last) {
       greeting = `Hi ${[first, last].filter(Boolean).join(" ")}, I'm Katie from PestAway Solutions.`;
-    } else if (company) {
-      greeting = `Hi there at ${company}, I'm Katie from PestAway Solutions.`;
     }
+
+    // Check for special custom field values to personalize greeting
+    if (contact.customField) {
+      const loanType = this.findCustomFieldByName(contact.customField, "Loan Type");
+      const veteran = this.findCustomFieldByName(contact.customField, "Veteran");
+      
+      if (loanType) {
+        greeting += ` I see you're working on a ${loanType} loan.`;
+      } else if (veteran === "Yes") {
+        greeting += ` I see you're a veteran - thank you for your service!`;
+      }
+    }
+
     greeting += " How can I help you today?";
 
     const res: CustomLlmResponse = {
@@ -274,6 +354,40 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
     ws.send(JSON.stringify(res));
   }
 
+  // Helper method to find custom field values by exact field name
+  private findCustomFieldByName(customFields: any[], fieldName: string): string | null {
+    if (!Array.isArray(customFields)) return null;
+    
+    for (const field of customFields) {
+      if (field.id && field.value) {
+        const mappedName = this.customFieldMapping[field.id];
+        if (mappedName === fieldName) {
+          return field.value;
+        }
+      }
+    }
+    return null;
+  }
+
+  // Helper method to get all custom field values as an object
+  private getAllCustomFields(customFields: any[]): { [fieldName: string]: string } {
+    const result: { [fieldName: string]: string } = {};
+    
+    if (!Array.isArray(customFields)) return result;
+    
+    customFields.forEach(field => {
+      if (field.id && field.value) {
+        const fieldName = this.customFieldMapping[field.id];
+        if (fieldName) {
+          result[fieldName] = field.value;
+        }
+      }
+    });
+    
+    return result;
+  }
+
+  // [Previous methods remain the same: ConversationToChatRequestMessages, PreparePrompt, DraftResponse]
   private ConversationToChatRequestMessages(conversation: Utterance[]) {
     const result: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
     for (const turn of conversation) {
@@ -297,7 +411,6 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
       },
     ];
 
-    // Add contact summary as an assistant message if available
     if (this.contactSummary && this.contactSummary.trim()) {
       requestMessages.push({
         role: "assistant",
@@ -376,7 +489,6 @@ When a customer asks about availability or scheduling, use the check_calendar_ti
           const delta = event.choices[0].delta;
           if (!delta) continue;
 
-          // Handle tool/function call
           if (delta.tool_calls && delta.tool_calls.length > 0 && !toolCallHandled) {
             const toolCall = delta.tool_calls[0];
             if (toolCall.id && toolCall.function?.name) {
