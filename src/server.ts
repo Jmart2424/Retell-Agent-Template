@@ -129,17 +129,74 @@ export class Server {
           };
           ws.send(JSON.stringify(toolMsg));
 
-          // e) greet the caller WITH the contact data
-          llmClient.BeginMessage(ws, n8nResponseJson);
+          // e) Send initial greeting message from Katie Scheduler
+          const initialMessage: CustomLlmResponse = {
+            response_type: "response",
+            response_id: 0,
+            content: "Hello! This is Katie Scheduler from American Financial Network. I'm here to help you explore your home equity options. How are you doing today?",
+            content_complete: true,
+            end_call: false,
+          };
+          ws.send(JSON.stringify(initialMessage));
           return;
         }
 
         // ----------  normal turns  ----------
-        if (
-          request.interaction_type === "response_required" ||
-          request.interaction_type === "reminder_required"
-        ) {
-          llmClient.DraftResponse(request, ws);
+        if (request.interaction_type === "response_required") {
+          try {
+            const response = await llmClient.DraftResponse(request);
+            
+            // Send the response back via WebSocket
+            const llmResponse: CustomLlmResponse = {
+              response_type: "response",
+              response_id: response.response_id,
+              content: response.content,
+              content_complete: true,
+              end_call: false,
+            };
+            ws.send(JSON.stringify(llmResponse));
+          } catch (error) {
+            console.error("Error in DraftResponse:", error);
+            
+            // Send error response
+            const errorResponse: CustomLlmResponse = {
+              response_type: "response",
+              response_id: request.response_id || 0,
+              content: "I apologize, but I'm having trouble processing your request right now. Let me connect you with one of our licensed bankers.",
+              content_complete: true,
+              end_call: false,
+            };
+            ws.send(JSON.stringify(errorResponse));
+          }
+          return;
+        }
+
+        if (request.interaction_type === "reminder_required") {
+          try {
+            const response = await llmClient.DraftReminderResponse(request);
+            
+            // Send the response back via WebSocket
+            const llmResponse: CustomLlmResponse = {
+              response_type: "response",
+              response_id: response.response_id,
+              content: response.content,
+              content_complete: true,
+              end_call: false,
+            };
+            ws.send(JSON.stringify(llmResponse));
+          } catch (error) {
+            console.error("Error in DraftReminderResponse:", error);
+            
+            // Send error response
+            const errorResponse: CustomLlmResponse = {
+              response_type: "response",
+              response_id: request.response_id || 0,
+              content: "I'm still here to help you with your home equity options. Would you like to continue?",
+              content_complete: true,
+              end_call: false,
+            };
+            ws.send(JSON.stringify(errorResponse));
+          }
           return;
         }
 
@@ -150,9 +207,15 @@ export class Server {
             timestamp: request.timestamp
           };
           ws.send(JSON.stringify(pong));
+          return;
         }
 
         // update_only messages need no action
+        if (request.interaction_type === "update_only") {
+          // Log the update but don't send any response
+          console.log("Received update_only message");
+          return;
+        }
       });
     });
   }
