@@ -313,8 +313,8 @@ You are Emily, a virtual assistant representing CoolZone HVAC, a trusted heating
 
     // TODO: Customize your greeting message here
     const greeting = firstName
-      ? `Hi, this is Katie with PestAway Solutions. It looks like we have you in our system. Am I speaking with ${firstName}?`
-      : `Hi, this is Katie with PestAway Solutions. May I ask who I'm speaking with today?`;
+      ? `Hi, this is Maya with Retell's Agent Contact Found Template . It looks like we have you in our system. Am I speaking with ${firstName}?`
+      : `Hi, this is Maya with Retell's Agent Template. May I ask who I'm speaking with today?`;
 
     // Send the greeting over the WebSocket:
     const res: CustomLlmResponse = {
