@@ -14,11 +14,11 @@ import {
 export class DemoLlmClient {
   private client: OpenAI;
   private contactSummary = "";
-  
+
   // Custom field mapping - UPDATE FOR YOUR PROJECT
   private customFieldMapping: { [key: string]: string } = {
     "SeLYuAVIdqR3xz31DgX5": "Home Value",
-    "K2oQYXcF7zmZgbNZJgaz": "Loan Amount", 
+    "K2oQYXcF7zmZgbNZJgaz": "Loan Amount",
     // Add your custom field mappings here for Greenline Landscaping
   };
 
@@ -173,8 +173,6 @@ You are Alicia, a virtual assistant for Greenline Landscaping, a landscaping bus
   2. Use the cancel_appt function to cancel the appointment
     - Pass {{email}} as attendeesEmail 
 
-
-
 `;
 
   // CUSTOM GREETING LOGIC FOR Alicia
@@ -187,9 +185,9 @@ You are Alicia, a virtual assistant for Greenline Landscaping, a landscaping bus
     }
 
     const firstName = contact.firstName || contact.first_name || "";
-    
+
     // Alicia greeting for Greenline Landscaping
-    const greeting = `Thank you for calling Greenline Landscaping, this is Alicia. Who do I have the pleasure of speaking with today?`;
+    const greeting = `Thank you for calling Greenline Landscaping, this is Alicia. With Whom do I have the pleasure of speaking with?`;
 
     const res: CustomLlmResponse = {
       response_type: "response",
@@ -219,7 +217,7 @@ You are Alicia, a virtual assistant for Greenline Landscaping, a landscaping bus
       }
     },
     {
-      type: "function", 
+      type: "function",
       function: {
         name: "ghl_lookup",
         description: "Lookup contact information in Greenline Landscaping database",
@@ -250,7 +248,6 @@ You are Alicia, a virtual assistant for Greenline Landscaping, a landscaping bus
   ];
 
   // WEBHOOK CONFIGURATION FOR Greenline Landscaping
-  // Automatically generated from your inputs
   private async handleFunctionCall(functionName: string, parameters: any): Promise<string> {
     const webhookEndpoints: { [key: string]: string | null } = {
       'check_calendar_tidycal': null,
@@ -259,9 +256,9 @@ You are Alicia, a virtual assistant for Greenline Landscaping, a landscaping bus
     };
 
     if (functionName === 'end_call') {
-      return JSON.stringify({ 
-        success: true, 
-        message: parameters.reason || "Thank you for calling Greenline Landscaping!" 
+      return JSON.stringify({
+        success: true,
+        message: parameters.reason || "Thank you for calling Greenline Landscaping!"
       });
     }
 
@@ -273,7 +270,7 @@ You are Alicia, a virtual assistant for Greenline Landscaping, a landscaping bus
     try {
       const response = await fetch(webhookUrl, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'User-Agent': 'Greenline Landscaping-Alicia-LLM-Client'
         },
@@ -294,13 +291,188 @@ You are Alicia, a virtual assistant for Greenline Landscaping, a landscaping bus
       return JSON.stringify(result);
     } catch (error) {
       console.error(`Error calling ${functionName} for Greenline Landscaping:`, error);
-      return JSON.stringify({ 
+      return JSON.stringify({
         error: `Failed to execute ${functionName}`,
         details: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   }
 
-  // Additional core methods for Greenline Landscaping would go here...
-  // (Preserving all essential functionality from working system)
+  // ESSENTIAL METHODS - Required by server.ts
+  private ConversationToChatRequestMessages(conversation: Utterance[]) {
+    const result: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
+    for (const turn of conversation) {
+      result.push({
+        role: turn.role === "agent" ? "assistant" : "user",
+        content: turn.content,
+      });
+    }
+    return result;
+  }
+
+  private PreparePrompt(
+    request: ResponseRequiredRequest | ReminderRequiredRequest,
+    funcResult?: FunctionCall,
+  ) {
+    const transcript = this.ConversationToChatRequestMessages(request.transcript);
+    const requestMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+      {
+        role: "system",
+        content: this.systemPrompt,
+      },
+    ];
+
+    if (this.contactSummary && this.contactSummary.trim()) {
+      requestMessages.push({
+        role: "assistant",
+        content: this.contactSummary,
+      });
+    }
+
+    for (const message of transcript) {
+      requestMessages.push(message);
+    }
+
+    if (funcResult) {
+      requestMessages.push({
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: funcResult.id,
+            type: "function",
+            function: {
+              name: funcResult.funcName,
+              arguments: JSON.stringify(funcResult.arguments),
+            },
+          },
+        ],
+      });
+      requestMessages.push({
+        role: "tool",
+        tool_call_id: funcResult.id,
+        content: funcResult.result || "",
+      });
+    }
+
+    if (request.interaction_type === "reminder_required") {
+      requestMessages.push({
+        role: "user",
+        content: "(Now the user has not responded in a while, you would say:)",
+      });
+    }
+
+    return requestMessages;
+  }
+
+  // MAIN DRAFT RESPONSE METHOD - Required by server.ts
+  async DraftResponse(
+    request: ResponseRequiredRequest | ReminderRequiredRequest,
+    ws: WebSocket,
+    funcResult?: FunctionCall,
+  ) {
+    console.clear();
+    console.log("req", request);
+
+    if (request.interaction_type !== "response_required" && request.interaction_type !== "reminder_required") {
+      return;
+    }
+
+    const requestMessages = this.PreparePrompt(request, funcResult);
+
+    let funcCall: FunctionCall | undefined;
+    let funcArguments = "";
+    let toolCallHandled = false;
+
+    try {
+      const events = await this.client.chat.completions.create({
+        model: "llama3-70b-8192",
+        messages: requestMessages,
+        stream: true,
+        temperature: 0.1,
+        max_tokens: 200,
+        frequency_penalty: 1.0,
+        presence_penalty: 1.0,
+        tools: this.functions,
+      });
+
+      for await (const event of events) {
+        if (event.choices && event.choices.length >= 1) {
+          const delta = event.choices[0].delta;
+          if (!delta) continue;
+
+          if (delta.tool_calls && delta.tool_calls.length > 0 && !toolCallHandled) {
+            const toolCall = delta.tool_calls[0];
+            if (toolCall.id && toolCall.function?.name) {
+              funcArguments += toolCall.function.arguments || "";
+              funcCall = {
+                id: toolCall.id,
+                funcName: toolCall.function.name,
+                arguments: {},
+              };
+              continue;
+            }
+          } else if (funcCall && funcArguments && !toolCallHandled) {
+            funcCall.arguments = JSON.parse(funcArguments);
+            const functionResult = await this.handleFunctionCall(funcCall.funcName, funcCall.arguments);
+
+            let parsedResult: any;
+            try {
+              parsedResult = JSON.parse(functionResult);
+            } catch {
+              parsedResult = { error: "Invalid response format" };
+            }
+
+            let responseContent = "";
+            if (parsedResult.available) {
+              responseContent = `Great! ${parsedResult.message || 'That time slot is available.'}`;
+              if (parsedResult.suggested_times && Array.isArray(parsedResult.suggested_times) && parsedResult.suggested_times.length > 0) {
+                responseContent += ` I also have these alternative times available: ${parsedResult.suggested_times.join(", ")}.`;
+              }
+            } else if (parsedResult.success && funcCall.funcName === "ghl_lookup") {
+              responseContent = parsedResult.message || "Contact information found.";
+            } else {
+              responseContent = `I'm sorry, that time slot isn't available. Let me suggest some alternatives.`;
+              if (parsedResult.suggested_times && Array.isArray(parsedResult.suggested_times) && parsedResult.suggested_times.length > 0) {
+                responseContent += ` How about: ${parsedResult.suggested_times.join(", ")}?`;
+              }
+            }
+
+            const res: CustomLlmResponse = {
+              response_type: "response",
+              response_id: request.response_id,
+              content: responseContent,
+              content_complete: true,
+              end_call: false,
+            };
+            ws.send(JSON.stringify(res));
+            toolCallHandled = true;
+            break;
+          } else if (delta.content && !toolCallHandled) {
+            const res: CustomLlmResponse = {
+              response_type: "response",
+              response_id: request.response_id,
+              content: delta.content,
+              content_complete: false,
+              end_call: false,
+            };
+            ws.send(JSON.stringify(res));
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Error in gpt stream: ", err);
+    } finally {
+      if (funcCall && funcCall.funcName === "end_call") {
+        const res: CustomLlmResponse = {
+          response_type: "response",
+          response_id: request.response_id,
+          content: "Thank you for calling Greenline Landscaping!",
+          content_complete: true,
+          end_call: true,
+        };
+        ws.send(JSON.stringify(res));
+      }
+    }
+  }
 }
