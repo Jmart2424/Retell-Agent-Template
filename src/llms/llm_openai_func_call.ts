@@ -108,7 +108,7 @@ You are Alicia, a virtual assistant for Greenline Landscaping, a landscaping bus
   - Before booking the appointment, **always confirm with the user that you're checking availability.**
      - (e.g. “Let me double check availability for [suggested_time], just a moment…”)  
   1. Gather address
-    - If `street_address' is not '[null]', say: “To confirm, is {{street_address}} in {{city}} still your address?”  **speak the street number digit by digit**
+    - If \`street_address' is not '[null]', say: “To confirm, is {{street_address}} in {{city}} still your address?”  **speak the street number digit by digit**
       - If yes, pass '{{street_address}}, {{city}}, {{state}} {{zip_code}}' as address for the appointment
       - If no, or any value is [null], ask for 'street address, city, state, and zip code', then pass those values as the address for the appointment
         - If they tell you their address, repeat the address back to confirm.   Wait for confirmation.
@@ -171,7 +171,11 @@ You are Alicia, a virtual assistant for Greenline Landscaping, a landscaping bus
 - When they want to cancel an appointment:  **Follow the steps in order**
   1. Say: "Sure, is there any particular reason you are cancelling?"
   2. Use the cancel_appt function to cancel the appointment
-    - Pass {{email}} as attendeesEmail `;
+    - Pass {{email}} as attendeesEmail 
+
+
+
+`;
 
   // CUSTOM GREETING LOGIC FOR Alicia
   BeginMessage(ws: WebSocket, contactJson: any = {}) {
@@ -185,9 +189,7 @@ You are Alicia, a virtual assistant for Greenline Landscaping, a landscaping bus
     const firstName = contact.firstName || contact.first_name || "";
     
     // Alicia greeting for Greenline Landscaping
-    const greeting = firstName
-      ? `Thank you for calling Greenline Landscaping, this is Alcia who do I have the pleasure of speaking with? `
-      : `Thank you for calling Greenline Landscaping, this is Alcia who do I have the pleasure of speaking with? `;
+    const greeting = `Thank you for calling Greenline Landscaping, this is Alicia. Who do I have the pleasure of speaking with today?`;
 
     const res: CustomLlmResponse = {
       response_type: "response",
