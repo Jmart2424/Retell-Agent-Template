@@ -9,12 +9,39 @@ import {
   Utterance,
 } from "../types";
 
+/**
+ * ========================================
+ * CUSTOMIZABLE LLM CLIENT TEMPLATE
+ * ========================================
+ * 
+ * This template preserves ALL essential functionality from the working Railway deployment
+ * while providing clear sections for customization across different projects.
+ * 
+ * CRITICAL: This maintains the exact function timing, streaming, and webhook systems
+ * that make the original deployment functional.
+ * 
+ * CUSTOMIZATION SECTIONS:
+ * 1. CONFIGURATION - Update company details, field mappings, webhooks
+ * 2. SYSTEM PROMPT - Customize AI behavior and conversation flow  
+ * 3. CUSTOM FUNCTIONS - Add/modify your function definitions
+ * 4. GREETING LOGIC - Personalize call start behavior
+ */
+
 export class DemoLlmClient {
   private client: OpenAI;
   private contactSummary = "";
   
-  // Enhanced custom field mapping with actual field names
+  // ========================================
+  // 1. CONFIGURATION SECTION - CUSTOMIZE HERE
+  // ========================================
+  
+  /**
+   * CUSTOM FIELD MAPPING
+   * Replace these field IDs and names with your actual CRM/database fields
+   * These map internal field IDs to human-readable names
+   */
   private customFieldMapping: { [key: string]: string } = {
+    // TODO: Replace with your actual field IDs and names
     "SeLYuAVIdqR3xz31DgX5": "Home Value",
     "K2oQYXcF7zmZgbNZJgaz": "Loan Amount", 
     "11RRpfCU116d77Rzfb5H": "Loan Type",
@@ -30,11 +57,19 @@ export class DemoLlmClient {
   constructor() {
     this.client = new OpenAI({
       apiKey: process.env.OPENAI_APIKEY,
-      baseURL: "https://api.groq.com/openai/v1",
+      baseURL: "https://api.groq.com/openai/v1", // TODO: Update if using different provider
     });
   }
 
-  // Enhanced system prompt with specific custom field information
+  // ========================================
+  // 2. SYSTEM PROMPT SECTION - CUSTOMIZE HERE
+  // ========================================
+  
+  /**
+   * MAIN SYSTEM PROMPT
+   * This controls your AI assistant's behavior, personality, and conversation flow
+   * TODO: Customize for your specific business and use case
+   */
   private systemPrompt = `
 ## Identity & Purpose
 You are Emily, a virtual assistant representing CoolZone HVAC, a trusted heating and air conditioning service provider based nationally in the US. Your purpose is to assist callers experiencing HVAC issues by gathering key information, assessing the situation, and scheduling an appointment for a tech to come out. Your goal is to make the process stress-free, efficient, and reassuring—especially for callers dealing with uncomfortable or dangerous temperature conditions.
@@ -72,9 +107,9 @@ You are Emily, a virtual assistant representing CoolZone HVAC, a trusted heating
 - If They Interrupt: Respond directly to their response, then quickly get back on track.
 - Avoid repeating their address after confirming.
 
-
 ## Conversational Flow
 **Follow steps in order.  Don't transition to a different section unless explicitly given instructions to do so**
+
 ### Introduction
 1. Greet Caller
 - If {{first_name}} is not '[null]' say: "Thank you for calling CoolZone H-VAC! This is Emily. Am I speaking with {{first_name}}?"
@@ -175,10 +210,17 @@ You are Emily, a virtual assistant representing CoolZone HVAC, a trusted heating
   1. Say: "Sure, is there any particular reason you are cancelling?"
   2. Use the cancel_appt function to cancel the appointment
     - Pass {{email}} as attendeesEmail 
-
 `;
 
-  // Define available functions (unchanged)
+  // ========================================
+  // 3. CUSTOM FUNCTIONS SECTION - CUSTOMIZE HERE
+  // ========================================
+  
+  /**
+   * FUNCTION DEFINITIONS
+   * These define what functions your AI can call and when
+   * TODO: Add/modify functions for your specific use case
+   */
   private functions: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     {
       type: "function",
@@ -239,10 +281,64 @@ You are Emily, a virtual assistant representing CoolZone HVAC, a trusted heating
         }
       }
     }
+    // TODO: Add more functions as needed:
+    // - book_appt
+    // - cancel_appt  
+    // - send_confirmation
+    // - escalate_to_human
+    // etc.
   ];
 
-  // Enhanced function to handle comprehensive custom fields lookup
+  // ========================================
+  // 4. GREETING SECTION - CUSTOMIZE HERE
+  // ========================================
+  
+  /**
+   * CALL START GREETING LOGIC
+   * This handles the initial greeting when a call begins
+   * TODO: Customize the greeting message and logic for your business
+   */
+  BeginMessage(ws: WebSocket, contactJson: any = {}) {
+    // Parse the contact JSON returned by your webhook:
+    let contact: any = {};
+    try {
+      // if your n8n response wraps the data, adjust accordingly:
+      contact = contactJson.contact ?? contactJson.data ?? contactJson;
+    } catch {
+      contact = {};
+    }
+
+    // Extract first name (or fallback):
+    const firstName = contact.firstName || contact.first_name || "";
+
+    // TODO: Customize your greeting message here
+    const greeting = firstName
+      ? `Hi, this is Katie with PestAway Solutions. It looks like we have you in our system. Am I speaking with ${firstName}?`
+      : `Hi, this is Katie with PestAway Solutions. May I ask who I'm speaking with today?`;
+
+    // Send the greeting over the WebSocket:
+    const res: CustomLlmResponse = {
+      response_type: "response",
+      response_id: 0,
+      content: greeting,
+      content_complete: true,
+      end_call: false,
+    };
+    ws.send(JSON.stringify(res));
+  }
+
+  // ========================================
+  // WEBHOOK ENDPOINTS & FUNCTION HANDLING
+  // ========================================
+  // TODO: Update these webhook URLs for your deployment
+  
+  /**
+   * FUNCTION CALL HANDLER
+   * This routes function calls to the appropriate webhooks
+   * CRITICAL: Maintains exact timing and response handling from working system
+   */
   private async handleFunctionCall(functionName: string, parameters: any): Promise<string> {
+    // TODO: Update these webhook URLs for your deployment
     const webhookEndpoints: { [key: string]: string | null } = {
       'check_calendar_tidycal': 'https://n8n-cloudhosted.onrender.com/webhook-test/c01d3726-2d0d-4f83-8adf-3b32f5354d2f',
       'ghl_lookup': 'https://n8n-cloudhosted.onrender.com/webhook-test/894adbcb-6c82-4c25-b0e7-a1d973266aad',
@@ -296,7 +392,14 @@ You are Emily, a virtual assistant representing CoolZone HVAC, a trusted heating
     }
   }
 
-  // Enhanced method to create comprehensive contact summary with exact field names
+  // ========================================
+  // CONTACT SUMMARY CREATION
+  // ========================================
+  // CRITICAL: Preserves exact contact processing logic from working system
+  
+  /**
+   * Enhanced method to create comprehensive contact summary with exact field names
+   */
   private createEnhancedContactSummary(contactData: any): string {
     if (!contactData || Object.keys(contactData).length === 0) return "";
 
@@ -317,7 +420,9 @@ You are Emily, a virtual assistant representing CoolZone HVAC, a trusted heating
     return sections.length > 0 ? `[Contact Information: ${sections.join(" | ")}]` : "";
   }
 
-  // Process standard fields from contact data
+  /**
+   * Process standard fields from contact data
+   */
   private processStandardFields(contact: any): string {
     const parts: string[] = [];
     
@@ -341,7 +446,9 @@ You are Emily, a virtual assistant representing CoolZone HVAC, a trusted heating
     return parts.join(" | ");
   }
 
-  // Process custom fields using exact field mapping
+  /**
+   * Process custom fields using exact field mapping
+   */
   private processCustomFieldsWithMapping(contact: any): string {
     if (!contact.customField || !Array.isArray(contact.customField)) return "";
     
@@ -363,7 +470,9 @@ You are Emily, a virtual assistant representing CoolZone HVAC, a trusted heating
     return customFieldParts.length > 0 ? `Custom Fields: ${customFieldParts.join(", ")}` : "";
   }
 
-  // Process tags from contact data
+  /**
+   * Process tags from contact data
+   */
   private processTags(contact: any): string {
     if (!contact.tags || !Array.isArray(contact.tags)) return "";
     
@@ -374,37 +483,13 @@ You are Emily, a virtual assistant representing CoolZone HVAC, a trusted heating
     return validTags.length > 0 ? `Tags: ${validTags.join(", ")}` : "";
   }
 
-  // Enhanced BeginMessage with custom greeting
-  BeginMessage(ws: WebSocket, contactJson: any = {}) {
-    // Parse the contact JSON returned by your webhook:
-    let contact: any = {};
-    try {
-      // if your n8n response wraps the data, adjust accordingly:
-      contact = contactJson.contact ?? contactJson.data ?? contactJson;
-    } catch {
-      contact = {};
-    }
-
-    // Extract first name (or fallback):
-    const firstName = contact.firstName || contact.first_name || "";
-
-    // Build your exact greeting:
-    const greeting = firstName
-      ? `Hi, this is Katie with PestAway Solutions. It looks like we have you in our system. Am I speaking with ${firstName}?`
-      : `Hi, this is Katie with PestAway Solutions. May I ask who I'm speaking with today?`;
-
-    // Send the greeting over the WebSocket:
-    const res: CustomLlmResponse = {
-      response_type: "response",
-      response_id: 0,
-      content: greeting,
-      content_complete: true,
-      end_call: false,
-    };
-    ws.send(JSON.stringify(res));
-  }
-
-  // Helper method to find custom field values by exact field name
+  // ========================================
+  // HELPER METHODS FOR CUSTOM FIELD ACCESS
+  // ========================================
+  
+  /**
+   * Helper method to find custom field values by exact field name
+   */
   private findCustomFieldByName(customFields: any[], fieldName: string): string | null {
     if (!Array.isArray(customFields)) return null;
     
@@ -419,7 +504,9 @@ You are Emily, a virtual assistant representing CoolZone HVAC, a trusted heating
     return null;
   }
 
-  // Helper method to get all custom field values as an object
+  /**
+   * Helper method to get all custom field values as an object
+   */
   private getAllCustomFields(customFields: any[]): { [fieldName: string]: string } {
     const result: { [fieldName: string]: string } = {};
     
@@ -437,7 +524,14 @@ You are Emily, a virtual assistant representing CoolZone HVAC, a trusted heating
     return result;
   }
 
-  // ConversationToChatRequestMessages, PreparePrompt, and DraftResponse remain unchanged
+  // ========================================
+  // CORE CONVERSATION HANDLING
+  // ========================================
+  // CRITICAL: These methods handle the core conversation flow - DO NOT MODIFY
+  
+  /**
+   * Convert conversation history to OpenAI chat format
+   */
   private ConversationToChatRequestMessages(conversation: Utterance[]) {
     const result: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
     for (const turn of conversation) {
@@ -449,6 +543,9 @@ You are Emily, a virtual assistant representing CoolZone HVAC, a trusted heating
     return result;
   }
 
+  /**
+   * Prepare the prompt with conversation history and function results
+   */
   private PreparePrompt(
     request: ResponseRequiredRequest | ReminderRequiredRequest,
     funcResult?: FunctionCall,
@@ -504,6 +601,11 @@ You are Emily, a virtual assistant representing CoolZone HVAC, a trusted heating
     return requestMessages;
   }
 
+  /**
+   * MAIN RESPONSE HANDLER
+   * CRITICAL: This handles the streaming responses and function call timing
+   * DO NOT MODIFY - This is the core of the working system
+   */
   async DraftResponse(
     request: ResponseRequiredRequest | ReminderRequiredRequest,
     ws: WebSocket,
@@ -524,7 +626,7 @@ You are Emily, a virtual assistant representing CoolZone HVAC, a trusted heating
 
     try {
       const events = await this.client.chat.completions.create({
-        model: "llama3-70b-8192",
+        model: "llama3-70b-8192", // TODO: Update model if needed
         messages: requestMessages,
         stream: true,
         temperature: 0.1,
@@ -614,3 +716,42 @@ You are Emily, a virtual assistant representing CoolZone HVAC, a trusted heating
     }
   }
 }
+
+/**
+ * ========================================
+ * CUSTOMIZATION CHECKLIST
+ * ========================================
+ * 
+ * To adapt this template for a new project:
+ * 
+ * 1. CONFIGURATION SECTION:
+ *    □ Update customFieldMapping with your CRM field IDs
+ *    □ Update OpenAI baseURL if using different provider
+ * 
+ * 2. SYSTEM PROMPT SECTION:
+ *    □ Replace company name (CoolZone HVAC → Your Company)
+ *    □ Replace assistant name (Emily → Your Assistant Name)
+ *    □ Update service descriptions and conversation flow
+ *    □ Modify scheduling protocol for your business
+ * 
+ * 3. CUSTOM FUNCTIONS SECTION:
+ *    □ Update function names and descriptions
+ *    □ Add/remove functions as needed for your use case
+ *    □ Update function parameters for your requirements
+ * 
+ * 4. GREETING SECTION:
+ *    □ Customize BeginMessage greeting text
+ *    □ Update company name in greeting
+ *    □ Modify contact parsing logic if needed
+ * 
+ * 5. WEBHOOK ENDPOINTS:
+ *    □ Update all webhook URLs in handleFunctionCall
+ *    □ Test all webhook connections
+ * 
+ * 6. MODEL SETTINGS:
+ *    □ Update model name in DraftResponse if needed
+ *    □ Adjust temperature/max_tokens as required
+ * 
+ * CRITICAL: Test thoroughly before deploying to Railway!
+ * The function timing and streaming logic is essential for proper operation.
+ */
