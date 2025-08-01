@@ -174,30 +174,6 @@ You are Samantha Green, a virtual assistant representing PestAway Solutions, a p
     - Pass {{email}} as attendeesEmail 
 `;
 
-  // CUSTOM GREETING LOGIC FOR Samantha
-  BeginMessage(ws: WebSocket, contactJson: any = {}) {
-    let contact: any = {};
-    try {
-      contact = contactJson.contact ?? contactJson.data ?? contactJson;
-    } catch {
-      contact = {};
-    }
-
-    const firstName = contact.firstName || contact.first_name || "";
-
-    // Samantha greeting for PestAway Solutions
-    const greeting = ;
-
-    const res: CustomLlmResponse = {
-      response_type: "response",
-      response_id: 0,
-      content: greeting,
-      content_complete: true,
-      end_call: false,
-    };
-    ws.send(JSON.stringify(res));
-  }
-
   // Function definitions for PestAway Solutions with Cal.com Integration
   private functions: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     {
