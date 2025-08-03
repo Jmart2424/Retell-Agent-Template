@@ -387,7 +387,7 @@ You are Samantha Green, a virtual assistant representing PestAway Solutions, a p
 
     try {
       const events = await this.client.chat.completions.create({
-        model: "llama3-70b-8192",
+        model: "llama-3.1-8b-instant",
         messages: requestMessages,
         stream: true,
         temperature: 0.1,
