@@ -136,7 +136,7 @@ You are Sarah, a virtual assistant representing TechSupport Pro, a trusted techn
   // WEBHOOK CONFIGURATION FOR CoolZone HVAC with Cal.com Integration
   private async handleFunctionCall(functionName: string, parameters: any): Promise<string> {
     const webhookEndpoints: { [key: string]: string | null } = {
-      'check_avail_cal': null,
+      'check_avail_cal': 'https://n8n-cloudhosted.onrender.com/webhook/da90f355-dafe-4c87-a964-6252dc390b25',
       'ghl_lookup': null,
       'end_call': null
     };
