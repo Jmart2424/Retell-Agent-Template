@@ -110,7 +110,7 @@ export class DemoLlmClient {
     }
 
     // Irwin greeting for PestAway Solutions
-    const greeting = `Hi, this is Sarah with TechSupport Pro. How can I help you today?`;
+    const greeting = `Hi, this is Sarah with PesAway Solutions Pro. How can I help you today?`;
 
     const res: CustomLlmResponse = {
       response_type: "response",
