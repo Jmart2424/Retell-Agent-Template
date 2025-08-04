@@ -132,7 +132,7 @@ You are Emily, a virtual assistant representing CoolZone HVAC, a trusted heating
     }
 
     // Emily greeting for CoolZone HVAC
-    const greeting = `Thank you for calling CoolZone HVAC! This is Emily. ${firstName ? \`Am I speaking with ${firstName}?\` : \`How can I help you today?\`}`;
+    const greeting = `Thank you for calling CoolZone HVAC! This is Emily. ${firstName ? `Am I speaking with ${firstName}?` : `How can I help you today?`}`;
 
     const res: CustomLlmResponse = {
       response_type: "response",
