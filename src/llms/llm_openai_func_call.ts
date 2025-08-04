@@ -43,23 +43,7 @@ export class DemoLlmClient {
     });
   }
 
-  private systemPrompt = `## Identity & Purpose
-You are Samuel, a virtual assistant representing PestAway Solutions, a professional pest control provider based nationally in the US. Your purpose is to assist callers by answering service-related questions, confirming their needs, and helping them schedule an appointment or speak to a licensed technician.
-
-## Voice & Persona
-- Sound professional, friendly, calm, and knowledgeable
-- Show genuine concern for the caller's pest issue
-- Project confidence and reassurance
-- Use simple, accessible language when talking about pests and treatments
-
-## Response Guidelines
-- Keep answers concise unless further clarification is helpful
-- Ask one question at a time to keep the flow natural
-- Always offer a clear next step
-- When customer asks about the company or services, use the knowledge_search function to get accurate information
-
-## Function Usage
-- Use knowledge_search when customer asks: "tell me about your company", "what services do you offer", "company information", or similar questions about PestAway Solutions`;
+  private systemPrompt = "You are Samuel, a virtual assistant representing PestAway Solutions, a professional pest control provider. Your purpose is to assist callers by answering service-related questions and helping them schedule appointments. When customer asks about the company or services, use the knowledge_search function to get accurate information.";
 
   // Data Management Methods
   private updateSessionData(functionName: string, data: any): void {
@@ -84,10 +68,13 @@ You are Samuel, a virtual assistant representing PestAway Solutions, a professio
   private updateContactSummary(): void {
     const contact = this.sessionData.contact;
     if (contact) {
-      let summary = `Contact: ${contact.firstName || ""} ${contact.lastName || ""}`;
-      if (contact.email) summary += `, Email: ${contact.email}`;
-      if (contact.phone) summary += `, Phone: ${contact.phone}`;
-      if (contact.serviceHistory) summary += `, Service History: ${Array.isArray(contact.serviceHistory) ? contact.serviceHistory.join(", ") : contact.serviceHistory}`;
+      let summary = "Contact: " + (contact.firstName || "") + " " + (contact.lastName || "");
+      if (contact.email) summary += ", Email: " + contact.email;
+      if (contact.phone) summary += ", Phone: " + contact.phone;
+      if (contact.serviceHistory) {
+        const history = Array.isArray(contact.serviceHistory) ? contact.serviceHistory.join(", ") : contact.serviceHistory;
+        summary += ", Service History: " + history;
+      }
       this.contactSummary = summary;
     }
   }
@@ -96,11 +83,15 @@ You are Samuel, a virtual assistant representing PestAway Solutions, a professio
     let context = "";
     if (this.sessionData.contact) {
       const c = this.sessionData.contact;
-      context += `Customer: ${c.firstName || ""} ${c.lastName || ""}. `;
-      if (c.serviceHistory) context += `Previous services: ${Array.isArray(c.serviceHistory) ? c.serviceHistory.join(", ") : c.serviceHistory}. `;
+      context += "Customer: " + (c.firstName || "") + " " + (c.lastName || "") + ". ";
+      if (c.serviceHistory) {
+        const history = Array.isArray(c.serviceHistory) ? c.serviceHistory.join(", ") : c.serviceHistory;
+        context += "Previous services: " + history + ". ";
+      }
     }
     if (this.sessionData.knowledgeBase && this.sessionData.knowledgeBase.length > 0) {
-      context += "Available knowledge: " + this.sessionData.knowledgeBase.map(kb => kb.summary || kb.title || "Information available").join(", ") + ". ";
+      const knowledge = this.sessionData.knowledgeBase.map(kb => kb.summary || kb.title || "Information available").join(", ");
+      context += "Available knowledge: " + knowledge + ". ";
     }
     return context;
   }
@@ -121,7 +112,7 @@ You are Samuel, a virtual assistant representing PestAway Solutions, a professio
       this.updateContactSummary();
     }
 
-    const greeting = `Hi, this is Samuel with PestAway Solutions. How can I help you today?`;
+    const greeting = "Hi, this is Samuel with PestAway Solutions. How can I help you today?";
 
     const res: CustomLlmResponse = {
       response_type: "response",
@@ -219,7 +210,7 @@ You are Samuel, a virtual assistant representing PestAway Solutions, a professio
 
     const webhookUrl = webhookEndpoints[functionName];
     if (!webhookUrl) {
-      return JSON.stringify({ error: `No webhook configured for function: ${functionName}` });
+      return JSON.stringify({ error: "No webhook configured for function: " + functionName });
     }
 
     try {
@@ -254,16 +245,16 @@ You are Samuel, a virtual assistant representing PestAway Solutions, a professio
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error("HTTP error! status: " + response.status);
       }
 
       const result = await response.json();
       this.updateSessionData(functionName, result);
       return JSON.stringify(result);
     } catch (error) {
-      console.error(`Error calling ${functionName}:`, error);
+      console.error("Error calling " + functionName + ":", error);
       return JSON.stringify({
-        error: `Failed to execute ${functionName}`,
+        error: "Failed to execute " + functionName,
         details: error instanceof Error ? error.message : 'Unknown error'
       });
     }
@@ -297,7 +288,7 @@ You are Samuel, a virtual assistant representing PestAway Solutions, a professio
     if (personalizedContext) {
       requestMessages.push({
         role: "system",
-        content: `Session Context: ${personalizedContext}`,
+        content: "Session Context: " + personalizedContext,
       });
     }
 
@@ -403,27 +394,27 @@ You are Samuel, a virtual assistant representing PestAway Solutions, a professio
 
             let responseContent = "";
             const customerName = this.sessionData.contact?.firstName || "";
-            const personalPrefix = customerName ? `${customerName}, ` : "";
+            const personalPrefix = customerName ? customerName + ", " : "";
             
             if (funcCall.funcName === "ghl_lookup" && parsedResult.success) {
-              responseContent = `${personalPrefix}I found your information in our system. ${parsedResult.message || "How can I help you today?"}`;
+              responseContent = personalPrefix + "I found your information in our system. " + (parsedResult.message || "How can I help you today?");
             } else if (funcCall.funcName === "knowledge_search") {
               if (parsedResult.results || parsedResult.summary || parsedResult.message) {
-                responseContent = `${personalPrefix}${parsedResult.summary || parsedResult.message || parsedResult.results?.[0]?.content || "I found some information about our company that might help."}`;
+                responseContent = personalPrefix + (parsedResult.summary || parsedResult.message || (parsedResult.results && parsedResult.results[0] && parsedResult.results[0].content) || "I found some information about our company that might help.");
               } else {
-                responseContent = `${personalPrefix}I have information about PestAway Solutions. We're a professional pest control company that provides comprehensive pest management services nationwide.`;
+                responseContent = personalPrefix + "I have information about PestAway Solutions. We're a professional pest control company that provides comprehensive pest management services nationwide.";
               }
             } else if (parsedResult.available) {
-              responseContent = `${personalPrefix}Great! ${parsedResult.message || 'That time slot is available.'}`;
+              responseContent = personalPrefix + "Great! " + (parsedResult.message || 'That time slot is available.');
               if (parsedResult.suggested_times && Array.isArray(parsedResult.suggested_times) && parsedResult.suggested_times.length > 0) {
-                responseContent += ` I also have these alternative times available: ${parsedResult.suggested_times.join(", ")}.`;
+                responseContent += " I also have these alternative times available: " + parsedResult.suggested_times.join(", ") + ".";
               }
             } else if (parsedResult.success) {
-              responseContent = `${personalPrefix}${parsedResult.message || "I've processed your request successfully."}`;
+              responseContent = personalPrefix + (parsedResult.message || "I've processed your request successfully.");
             } else {
-              responseContent = `${personalPrefix}I'm sorry, that time slot isn't available. Let me suggest some alternatives.`;
+              responseContent = personalPrefix + "I'm sorry, that time slot isn't available. Let me suggest some alternatives.";
               if (parsedResult.suggested_times && Array.isArray(parsedResult.suggested_times) && parsedResult.suggested_times.length > 0) {
-                responseContent += ` How about: ${parsedResult.suggested_times.join(", ")}?`;
+                responseContent += " How about: " + parsedResult.suggested_times.join(", ") + "?";
               }
             }
 
@@ -466,5 +457,14 @@ You are Samuel, a virtual assistant representing PestAway Solutions, a professio
       console.error("Error in gpt stream: ", err);
     } finally {
       if (funcCall && funcCall.funcName === "end_call") {
-        const cu
+        const customerName = this.sessionData.contact?.firstName || "";
+        const personalizedGoodbye = customerName ? "Thank you " + customerName + " for calling PestAway Solutions!" : "Thank you for calling PestAway Solutions!";
+        const res: CustomLlmResponse = {
+          response_type: "response",
+          response_id: request.response_id,
+          content: personalizedGoodbye,
+          content_complete: true,
+          end_call: true,
+        };
+        ws.send(JSON.stringify(res
 (Content truncated due to size limit. Use page ranges or line ranges to read remaining content)
