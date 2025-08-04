@@ -466,5 +466,8 @@ export class DemoLlmClient {
           content_complete: true,
           end_call: true,
         };
-        ws.send(JSON.stringify(res
-(Content truncated due to size limit. Use page ranges or line ranges to read remaining content)
+        ws.send(JSON.stringify(res));
+      }
+    }
+  }
+}
